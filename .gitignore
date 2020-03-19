@@ -1,0 +1,5 @@
+*.nii.gz
+__pycache__
+*.mat
+*.txt 
+.vscode
