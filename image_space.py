@@ -39,6 +39,50 @@ class ImageSpace(object):
         self._offset = None
         self.header = img.header 
 
+    
+    @classmethod
+    def manual(cls, vox2world, size, vox_size):
+        """Manual constructor"""
+
+        spc = cls.__new__(cls)
+        spc.vox2world = vox2world
+        spc.size = size 
+        spc.vox_size = vox_size
+        spc.header = None 
+        spc._offset = None 
+        return spc 
+
+
+    @classmethod 
+    def create_axis_aligned(cls, bbox_corner, size, vox_size):
+        """
+        Create an ImageSpace from bounding box location and voxel size. 
+        Note that the voxels will be axis-aligned (no rotation). 
+
+        Args: 
+            bbox_corner: 3-vector, location of the minimum corner of the
+                bounding box, at which the corner of voxel 0 0 0 will lie. 
+            size: 3-vector, number of voxels in each spatial dimension 
+            vox_size: 3-vector, size of voxel in each dimension 
+
+        Returns
+            ImageSpace object 
+        """
+
+        vox_size = np.array(vox_size)
+        size = np.array(size)
+        bbox_corner = np.array(bbox_corner)
+
+        spc = cls.__new__(cls)
+        spc.vox2world = np.identity(4)
+        spc.vox2world[(0,1,2),(0,1,2)] = vox_size
+        orig = bbox_corner + (np.array((3*[0.5])) @ spc.vox2world[0:3,0:3])
+        spc.vox2world[0:3,3] = orig 
+        spc.size = size 
+        spc.vox_size = vox_size
+    
+        return spc 
+
 
     @classmethod
     def save_like(cls, ref, data, path): 
@@ -69,13 +113,12 @@ class ImageSpace(object):
         """
 
         orig = np.array((3 * [-0.5]) + [1])
-        return self.vox2world @ orig
+        return (self.vox2world @ orig)[:3]
 
 
     @property
     def world2vox(self):
         return np.linalg.inv(self.vox2world)
-
 
     @property
     def vox2FSL(self):
@@ -94,15 +137,15 @@ class ImageSpace(object):
         vox2FSL[range(3), range(3)] = self.vox_size
 
         # Check the xyzt field to find the spatial units. 
-        xyzt = str(self.header['xyzt_units'])
-        if xyzt == '01': 
-            multi = 1000
-        elif xyzt == '10':
-            multi = 1 
-        elif xyzt =='11':
-            multi = 1e-3
-        else: 
-            multi = 1
+        multi = 1 
+        if self.header is not None: 
+            xyzt = str(self.header['xyzt_units'])
+            if xyzt == '01': 
+                multi = 1000
+            elif xyzt == '10':
+                multi = 1 
+            elif xyzt =='11':
+                multi = 1e-3
 
         if det > 0:
             vox2FSL[0,0] = -self.vox_size[0]
@@ -127,94 +170,35 @@ class ImageSpace(object):
     def FSL2world(self):
         return self.vox2world @ self.FSL2vox
 
-
-    def supersample(self, factor):
-        """
-        Produce a new image space which is a copy of the current space, 
-        upsampled by a factor of (a,b,c) in each dimension 
-
-        Args:
-            factor: int, or sequence of 3 ints, multiplier in each dimension 
+    def resize_voxels(self, factor, mode="floor"):
         
-        Returns: 
-            ImageSpace object
-        """
-
-        if isinstance(factor, int):
-            factor = 3 * [factor]
+        if mode == "floor":
+            rounder = np.floor 
         else: 
-            try: 
-                assert len(factor) == 3
-            except Exception as e: 
-                raise RuntimeError("Factor must be an int or sequence of 3 ints")
+            rounder = np.ceil 
 
-        factor = np.array(factor)
+        new_size = rounder(self.size / factor).astype(np.int16)
+        new_vox_size = self.vox_size * factor 
+        new_vox2world = copy.deepcopy(self.vox2world)
+        new_vox2world[:3,:3] *= factor[None,:]
+        bbox_shift = (new_vox2world[:3,:3] @ [0.5, 0.5, 0.5])
+        new_vox2world[:3,3] = self.bbox_origin + bbox_shift
+        return ImageSpace.manual(new_vox2world, new_size, new_vox_size)
 
-        factor = np.array(factor)
-        newSpace = copy.deepcopy(self)
-
-        newSpace.size = (self.size * factor).astype(np.int16)
-        newSpace.vox_size /= factor
-        newSpace.vox2world[0:3,0:3] /= factor[None,:]
-
-        # Get the corner of the reference space bounding box 
-        # Then move in by 0.5 voxels of the new voxel grid to the find the point 
-        # corresponding to voxel (0,0,0) on the new grid 
-        new_orig = self.bbox_origin + (newSpace.vox2world[0:3,0:3] @ np.array((3*[0.5])))
-        newSpace.vox2world[0:3,3] = new_orig
-
-        # Check the bounds of the new voxel grid we have created
-        np.testing.assert_array_almost_equal(self.bbox_origin, newSpace.bbox_origin, 6)
-        box_diag_ref = self.vox2world[0:3,0:3] @ self.size 
-        box_diag_new = newSpace.vox2world[0:3,0:3] @ newSpace.size 
-        np.testing.assert_array_almost_equal(box_diag_ref, box_diag_new, 6)
-
-        return newSpace
+    
+    def transform(self):
+        pass 
 
 
-    def subsample(self, factor, mode='floor'):
-        """
-        Subsample an ImageSpace and return new object. 
-        
-        Args: 
-            factor: int, or sequence of 3 ints, by which each dimension's size
-                will be divided - eg, 2 corresponds to 0.5 original size 
-            mode: 'floor' [defualt] or 'ceil'. if the FoV of the new grid 
-                does not match that of the original, round down/up respectively
-                to get the new extents 
+    def touch(self, path, dtype=np.float32): 
+        """Save empty volume at path"""
+        vol = np.zeros(self.size, dtype)
+        self.save_image(vol, path )
 
-        Returns:
-            ImageSpace object
-        """
-        
-        if (mode != 'floor') and (mode != 'ceil'):
-            raise RuntimeError("Mode must be floor or ceil")
-
-        if isinstance(factor, int):
-            factor = 3 * [factor]
-        else: 
-            try: 
-                assert len(factor) == 3
-            except Exception as e: 
-                raise RuntimeError("Factor must be an int or sequence of 3 ints")
-
-        factor = np.array(factor)
-        if not np.all(factor >= 1):
-            raise RuntimeError("This tool can only be used for down-sampling")
-
-        new = copy.deepcopy(self)
-        if mode == 'floor':
-            func = np.floor 
-        else:
-            func = np.ceil 
-        
-        new.size = func(self.size / factor).astype(np.int16)
-        new.vox2world[0:3,0:3] *= factor[None,:]
-        new.vox_size *= factor 
-        new_orig = self.bbox_origin + (new.vox2world[0:3,0:3] @ np.array([0.5, 0.5, 0.5]))
-        new.vox2world[0:3,3] = new_orig
-
-        return new 
+    
+    def save_empty(self, path, dtype=np.float32): 
+        """Alias of touch()"""
+        self.touch(path, dtype)
 
 
     def crop(self, start_extents, end_extents):
@@ -256,37 +240,6 @@ class ImageSpace(object):
         new.size = new_size 
 
         return new 
-
-
-    @classmethod 
-    def create(cls, bbox_corner, size, vox_size):
-        """
-        Create an ImageSpace from bounding box location and voxel size. 
-        Note that the voxels will be axis-aligned (no rotation). 
-
-        Args: 
-            bbox_corner: 3-vector, location of the minimum corner of the
-                bounding box, at which the corner of voxel 0 0 0 will lie. 
-            size: 3-vector, number of voxels in each spatial dimension 
-            vox_size: 3-vector, size of voxel in each dimension 
-
-        Returns
-            ImageSpace object 
-        """
-
-        vox_size = np.array(vox_size)
-        size = np.array(size)
-        bbox_corner = np.array(bbox_corner)
-
-        spc = cls.__new__(cls)
-        spc.vox2world = np.identity(4)
-        spc.vox2world[(0,1,2),(0,1,2)] = vox_size
-        orig = bbox_corner + (np.array((3*[0.5])) @ spc.vox2world[0:3,0:3])
-        spc.vox2world[0:3,3] = orig 
-        spc.size = size 
-        spc.vox_size = vox_size
-    
-        return spc 
 
 
     def save_image(self, data, path):
