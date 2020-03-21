@@ -23,6 +23,12 @@ def affine_transform(matrix, points):
         t = t.T
     return t[:3,:]
 
+def _clip_array(array, ref):
+    min_max = (ref.min(), ref.max())
+    array[array < min_max[0]] = min_max[0]
+    array[array > min_max[1]] = min_max[1]
+    return array 
+
 def _application_worker(data, ref2src_world, src_spc, 
     ref_spc, cores, **kwargs):
 
@@ -32,15 +38,25 @@ def _application_worker(data, ref2src_world, src_spc,
     # Affine transformation requires mapping from reference voxels
     # to source voxels (the inverse of how transforms are given)
     ref2src_vox = (src_spc.world2vox @ ref2src_world @ ref_spc.vox2world)
-    outsize = (*ref_spc.size, *data.shape[3:])
-    
-    ijkt = np.meshgrid(*[ np.arange(d) for d in outsize ], indexing='ij')
-    coords = np.stack([ d.flatten() for d in ijkt ]).astype(np.float64)
-    coords[:3,:] = affine_transform(ref2src_vox, coords[:3,:])
-    resamp = np.empty(np.prod(outsize), data.dtype)
-    map_coordinates(data, coords, resamp, **kwargs)
-    return resamp 
+    ijk = np.meshgrid(*[ np.arange(d) for d in ref_spc.size ], indexing='ij')
+    ijk = np.stack([ d.flatten() for d in ijk ]).astype(np.float32)
+    ijk = affine_transform(ref2src_vox, ijk)
+    worker = functools.partial(map_coordinates, 
+        coordinates=ijk, output=data.dtype, **kwargs)
 
+    if len(data.shape) == 4: 
+        data = np.moveaxis(data, 3, 0)
+    else: 
+        data = data.reshape(1, *data.shape)
+
+    if cores == 1:  
+        resamp = [ worker(d) for d in data ] 
+    else: 
+        with mp.Pool(cores) as p: 
+            resamp = p.map(worker, data)
+
+    resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
+    return _clip_array(np.squeeze(resamp), data) 
 
 def __fsl_to_world(src2ref_fsl, src_spc, ref_spc):
     return ref_spc.FSL2world @ src2ref_fsl @ src_spc.world2FSL
@@ -333,7 +349,10 @@ class MotionCorrection(Registration):
         elif not isinstance(ref, ImageSpace):
             raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
 
-        img = src.get_fdata()
+        if not dtype:
+            dtype=src.get_data_dtype()
+        img = src.get_fdata().astype(dtype)
+
         assert len(img.shape) == 4, "Image is not 4D"
         img = np.moveaxis(img, 3, 0)
 
@@ -345,18 +364,12 @@ class MotionCorrection(Registration):
             src_spc=src_spc, ref_spc=ref, cores=1, **kwargs)
         work_list = zip(img, self.ref2src_world_mats)
         if cores == 1:
-            resamp = [ worker(f,m) for f,m in work_list ]
+            resamp = np.stack([ worker(*fm) for fm in work_list ], 3)
 
         else: 
             with mp.Pool() as p: 
-                resamp = p.starmap(worker, work_list)
+                resamp =  np.stack(p.starmap(worker, work_list), 3) 
 
-        resamp = np.squeeze(np.stack(resamp, 0))
-        resamp = np.moveaxis(resamp, 0, 3)
-
-        if not dtype:
-            dtype=src.get_data_dtype()
-        resamp = resamp.astype(dtype)
 
         if out: 
             ref.save_image(resamp, out)
@@ -383,13 +396,14 @@ if __name__ == "__main__":
     asl2brain = Registration(asl2brain, src, ref, "fsl")
     moco = MotionCorrection(mcdir, src, src, "fsl")
     
-    # asl2brain_moco = Registration.chain(moco, asl2brain)
+    asl2brain_moco = Registration.chain(moco, asl2brain)
     # Registration.chain(asl2brain, moco)
     # Registration.chain(moco, moco)
     # Registration.chain(asl2brain, moco)
 
-    asl2brain.apply_to('asl_target.nii.gz', ref, out='test4.nii.gz')
-    # asl2brain_moco.apply_to("asl.nii.gz", ref_scaled, "test3.nii.gz", cores=16)
+    # asl2brain.apply_to('asl_target.nii.gz', ref_scaled, out='test4.nii.gz')
+    # asl2brain.apply_to('asl.nii.gz', ref_scaled, out='test2.nii.gz', cores=6)
+    asl2brain_moco.apply_to("asl.nii.gz", ref, "asl_moco_brain.nii.gz", cores=8)
 
     # factor = src.vox_size / ref.vox_size
     # ref_scaled = ref.resize_voxels(factor)
