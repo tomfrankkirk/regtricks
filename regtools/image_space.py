@@ -27,12 +27,13 @@ class ImageSpace(object):
         self.offset: private variable used for derived spaces 
     """
 
-    def __init__(self, path):
+    def __init__(self, img):
 
-        if not op.isfile(path):
-            raise RuntimeError("Image %s does not exist" % path)
-
-        img = nibabel.load(path)
+        if isinstance(img, str):
+            img = nibabel.load(img)
+        else: 
+            assert isinstance(img, nibabel.Nifti1Image)
+            
         self.size = img.header['dim'][1:4]
         self.vox_size = img.header['pixdim'][1:4]
         self.vox2world = img.affine
@@ -266,3 +267,6 @@ class ImageSpace(object):
         nibabel.save(nii, path)
 
 
+    def ijk_grid(self, indexing='ij'):
+        ijk = np.meshgrid(*[ np.arange(d) for d in self.size ], indexing=indexing)
+        return np.stack(ijk, axis=-1)

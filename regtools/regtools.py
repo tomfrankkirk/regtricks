@@ -11,56 +11,6 @@ from toblerone import utils
 from scipy.interpolate import interpn
 from scipy.ndimage.interpolation import map_coordinates
 
-def affine_transform(matrix, points): 
-    transpose = False 
-    if points.shape[1] == 3: 
-        transpose = True 
-        points = points.T 
-    p = np.ones((4, points.shape[1]))
-    p[:3,:] = points 
-    t = matrix @ p 
-    if transpose: 
-        t = t.T
-    return t[:3,:]
-
-def _clip_array(array, ref):
-    min_max = (ref.min(), ref.max())
-    array[array < min_max[0]] = min_max[0]
-    array[array > min_max[1]] = min_max[1]
-    return array 
-
-def _application_worker(data, ref2src_world, src_spc, 
-    ref_spc, cores, **kwargs):
-
-    if len(data.shape) != 4 and len(data.shape) != 3: 
-        raise RuntimeError("Can only handle 3D/4D data")
-
-    # Affine transformation requires mapping from reference voxels
-    # to source voxels (the inverse of how transforms are given)
-    ref2src_vox = (src_spc.world2vox @ ref2src_world @ ref_spc.vox2world)
-    ijk = np.meshgrid(*[ np.arange(d) for d in ref_spc.size ], indexing='ij')
-    ijk = np.stack([ d.flatten() for d in ijk ]).astype(np.float32)
-    ijk = affine_transform(ref2src_vox, ijk)
-    worker = functools.partial(map_coordinates, 
-        coordinates=ijk, output=data.dtype, **kwargs)
-
-    if len(data.shape) == 4: 
-        data = np.moveaxis(data, 3, 0)
-    else: 
-        data = data.reshape(1, *data.shape)
-
-    if cores == 1:  
-        resamp = [ worker(d) for d in data ] 
-    else: 
-        with mp.Pool(cores) as p: 
-            resamp = p.map(worker, data)
-
-    resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
-    return _clip_array(np.squeeze(resamp), data) 
-
-def __fsl_to_world(src2ref_fsl, src_spc, ref_spc):
-    return ref_spc.FSL2world @ src2ref_fsl @ src_spc.world2FSL
-
 
 class Registration(object):
     """
@@ -108,11 +58,11 @@ class Registration(object):
                 print("Assuming world convention")
                 convention = "world"
 
-        if convention == "fsl":
+        if convention.lower() == "fsl":
             self.__src2ref_world = (self.ref_spc.FSL2world 
                     @ src2ref @ self.src_spc.world2FSL )
 
-        elif convention == "world":
+        elif convention.upper() == "world":
             self.__src2ref_world = src2ref 
 
         else: 
@@ -147,7 +97,7 @@ class Registration(object):
         return Registration(self.ref2src_world, src=self.ref_spc, 
             ref=self.src_spc, convention='world')
 
-    def to_flirt(self, src, ref):
+    def to_fsl(self, src, ref):
         if not isinstance(src, ImageSpace):
             src = ImageSpace(src)
         if not isinstance(ref, ImageSpace):
@@ -155,27 +105,17 @@ class Registration(object):
 
         return ref.world2FSL @ self.src2ref_world @ src.FSL2world
 
-    def to_FSL(self, src, ref):
-        return self.to_flirt(src, ref)
+    def save_fsl(self, src, ref, path):
+        np.savetxt(path, self.to_fsl(src, ref))
         
-    def save_txt(self, fname, convention=""):
-        
-        if not convention: 
-            print("Saving in world convention")
-            convention = "world"
-
-        if convention == "world":
-            mat = self.src2ref_world
-        else: 
-            mat = self.to_FSL(self.src_spc, self.ref_spc)
-
-        np.savetxt(fname, mat)
+    def save_world(self, fname):
+        np.savetxt(fname, self.src2ref_world)
 
 
-    def apply_to(self, src, ref, out='', order=1, dtype=None, cores=1, **kwargs):
+    def apply_to(self, src, ref, out='', dtype=None, cores=1, **kwargs):
         """
-        Apply registration transform to image. Uses scipy.ndimage.affine_
-        transform(), see that documentation for valid **kwargs. 
+        Apply registration transform to image. Uses scipy.ndimage.interpolation.
+        map_coordinates, see that documentation for valid **kwargs. 
 
         Args:   
             src: either a nibabel Image object, or path to image file, 
@@ -183,9 +123,8 @@ class Registration(object):
             ref: either a nibabel Image object, ImageSpace object, or
                 path to image file, reference voxel grid 
             out: (optional) path to save output at 
-            order: (optional, 1-5) order of sinc interpolation (1: trilinear)
             dtype: (optional) output datatype (default same as input)
-            kwargs: passed on to scipy.ndimage.affine_transform
+            **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
             np.array of transformed image data in ref voxel grid.
@@ -195,20 +134,17 @@ class Registration(object):
             src = nibabel.load(src)
         elif not isinstance(src, nibabel.Nifti1Image):
             raise RuntimeError("src must be a nibabel Nifti or path to image")
-        src_spc = ImageSpace(src.get_filename())
+        src_spc = ImageSpace(src)
 
-        if isinstance(ref, str):
-            ref = ImageSpace(ref)
-        elif isinstance(ref, nibabel.Nifti1Image):
-            ref = ImageSpace(ref.get_filename())
-        elif not isinstance(ref, ImageSpace):
-            raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
+        if not isinstance(ref, ImageSpace):
+                ref = ImageSpace(ref)
+        else: raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
 
         img = src.get_fdata().astype(src.get_data_dtype())
         if not dtype: 
             dtype = src.get_data_dtype()
         resamp = _application_worker(img, self.ref2src_world, src_spc, 
-            ref, cores, **kwargs)
+            ref, order, cores, **kwargs)
 
         if out: 
             ref.save_image(resamp, out)
@@ -256,35 +192,6 @@ class Registration(object):
     @classmethod
     def eye(cls):
         return Registration.identity()
-
-
-    @classmethod
-    def chain(cls, *args):
-        """ 
-        Concatenate a series of registrations.
-
-        Args: 
-            *args: sequence of Registration objects, given in the  
-                order that they need to be applied (eg, for A -> B -> C, 
-                give them in that order and they will be multiplied in 
-                reverse order)
-
-        Returns: 
-            Registration object, with the first registrations' source 
-            and the last's reference 
-        """
-
-        if (len(args) == 1) and (type(args) is Registration):
-            chained = args
-        else: 
-            if not all([isinstance(r, Registration) for r in args ]):
-                raise RuntimeError("Each item in sequence must be a" + 
-                    " Registration.")
-            chained = args[1] * args[0]
-            for r in args[2:]:
-                chained = r * chained 
-
-        return chained 
 
 
 class MotionCorrection(Registration):
@@ -356,54 +263,132 @@ class MotionCorrection(Registration):
         assert len(img.shape) == 4, "Image is not 4D"
         img = np.moveaxis(img, 3, 0)
 
-        # if not len(self.transforms) == img.shape[0]:
-        #     raise RuntimeError("Number of motion correction matrices does" +
-        #         "not match length in series.")
+        if not len(self.transforms) == img.shape[0]:
+            raise RuntimeError("Number of motion correction matrices does" +
+                "not match length in series.")
 
         worker = functools.partial(_application_worker, 
             src_spc=src_spc, ref_spc=ref, cores=1, **kwargs)
         work_list = zip(img, self.ref2src_world_mats)
         if cores == 1:
             resamp = np.stack([ worker(*fm) for fm in work_list ], 3)
-
         else: 
             with mp.Pool() as p: 
                 resamp =  np.stack(p.starmap(worker, work_list), 3) 
-
 
         if out: 
             ref.save_image(resamp, out)
         
         return resamp
 
+
+def chain(*args):
+    """ 
+    Concatenate a series of registrations.
+
+    Args: 
+        *args: Registration objects, given in the order that they need to be 
+            applied (eg, for A -> B -> C, give them in that order and they 
+            will be multiplied as C * B * A)
+
+    Returns: 
+        Registration object, with the first registrations' source 
+        and the last's reference (if these are not None)
+    """
+
+    if (len(args) == 1) and (type(args) is Registration):
+        chained = args
+    else: 
+        if not all([isinstance(r, Registration) for r in args ]):
+            raise RuntimeError("Each item in sequence must be a" + 
+                " Registration.")
+        chained = args[1] * args[0]
+        for r in args[2:]:
+            chained = r * chained 
+
+    return chained 
+
+
+def _affine_transform(matrix, points): 
+    transpose = False 
+    if points.shape[1] == 3: 
+        transpose = True 
+        points = points.T 
+    p = np.ones((4, points.shape[1]))
+    p[:3,:] = points 
+    t = matrix @ p 
+    if transpose: 
+        t = t.T
+    return t[:3,:]
+
+
+def _clip_array(array, ref):
+    min_max = (ref.min(), ref.max())
+    array[array < min_max[0]] = min_max[0]
+    array[array > min_max[1]] = min_max[1]
+    return array 
+
+
+def _application_worker(data, ref2src_world, src_spc, 
+    ref_spc, order, cores, **kwargs):
+
+    if len(data.shape) != 4 and len(data.shape) != 3: 
+        raise RuntimeError("Can only handle 3D/4D data")
+
+    # Affine transformation requires mapping from reference voxels
+    # to source voxels (the inverse of how transforms are given)
+    ref2src_vox = (src_spc.world2vox @ ref2src_world @ ref_spc.vox2world)
+    ijk = ref_spc.ijk_grid('ij').reshape(-1,3).T
+    ijk = _affine_transform(ref2src_vox, ijk)
+    worker = functools.partial(map_coordinates, order=order, 
+        coordinates=ijk, output=data.dtype, **kwargs)
+
+    if len(data.shape) == 4: 
+        data = np.moveaxis(data, 3, 0)
+    else: 
+        data = data.reshape(1, *data.shape)
+
+    if cores == 1:  
+        resamp = [ worker(d) for d in data ] 
+    else: 
+        with mp.Pool(cores) as p: 
+            resamp = p.map(worker, data)
+
+    resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
+    return _clip_array(np.squeeze(resamp), data) 
+
+
+
+
 if __name__ == "__main__":
 
-    # TODO: affine transform points method on ImageSpace class - to points, to voxels
-    # as_fsl() method on registration class 
-    # make into a package, tidy away helper methods 
-    # single affine transform on 4D data - must be a way to do this without mp.Pool()
+    # TODO
     # docs, think about interface 
     # Expand/crop FoV on image space 
-    # Email Martin about spline filter on order > 1 - good for image quality?
+    # how to save registration object 
     
     src = ImageSpace('asl_target.nii.gz')
     ref = ImageSpace('brain.nii.gz')
     ref_scaled = ImageSpace("scaled_brain.nii.gz")
-    asl = 'asl.nii.gz'
-    mcdir = 'mcf_mats'
+    ref_scaled.touch('ref_scaled.nii.gz')
+    # asl = 'asl.nii.gz'
+    # mcdir = 'mcf_mats'
 
-    asl2brain = np.loadtxt('asl2brain')
-    asl2brain = Registration(asl2brain, src, ref, "fsl")
-    moco = MotionCorrection(mcdir, src, src, "fsl")
-    
-    asl2brain_moco = Registration.chain(moco, asl2brain)
+    asl2brain = Registration('asl2brain', src, ref, "fsl")
+    np.savetxt('asl2brain_scaled_flirt.txt', asl2brain.to_fsl(src, ref_scaled))
+    asl2brain.apply_to('asl_target.nii.gz', ref_scaled, 'asl_brain_scipy.nii.gz', order=1)
+    asl2brain.apply_to('asl_target.nii.gz', ref_scaled, 'asl_brain_scipy_spline.nii.gz', order=3)
+
+
+    # asl2brain_moco = Registration.chain(moco, asl2brain)
+    # moco = MotionCorrection(mcdir, src, src, "fsl")
     # Registration.chain(asl2brain, moco)
     # Registration.chain(moco, moco)
     # Registration.chain(asl2brain, moco)
 
     # asl2brain.apply_to('asl_target.nii.gz', ref_scaled, out='test4.nii.gz')
     # asl2brain.apply_to('asl.nii.gz', ref_scaled, out='test2.nii.gz', cores=6)
-    asl2brain_moco.apply_to("asl.nii.gz", ref, "asl_moco_brain.nii.gz", cores=8)
+    # asl2brain_moco.apply_to("asl.nii.gz", ref, "asl_moco_brain.nii.gz", cores=8)
 
     # factor = src.vox_size / ref.vox_size
     # ref_scaled = ref.resize_voxels(factor)
