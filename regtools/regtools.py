@@ -5,12 +5,12 @@ import functools
 
 import nibabel 
 import numpy as np 
-
-from image_space import ImageSpace 
-from toblerone import utils 
 from scipy.interpolate import interpn
 from scipy.ndimage.interpolation import map_coordinates
+from toblerone import utils 
 
+from .image_space import ImageSpace
+# ImageSpace = image_space.ImageSpace()
 
 class Registration(object):
     """
@@ -357,44 +357,3 @@ def _application_worker(data, ref2src_world, src_spc,
     resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
     return _clip_array(np.squeeze(resamp), data) 
 
-
-
-
-if __name__ == "__main__":
-
-    # TODO
-    # docs, think about interface 
-    # Expand/crop FoV on image space 
-    # how to save registration object 
-    
-    src = ImageSpace('asl_target.nii.gz')
-    ref = ImageSpace('brain.nii.gz')
-    ref_scaled = ImageSpace("scaled_brain.nii.gz")
-    ref_scaled.touch('ref_scaled.nii.gz')
-    # asl = 'asl.nii.gz'
-    # mcdir = 'mcf_mats'
-
-    asl2brain = Registration('asl2brain', src, ref, "fsl")
-    np.savetxt('asl2brain_scaled_flirt.txt', asl2brain.to_fsl(src, ref_scaled))
-    asl2brain.apply_to('asl_target.nii.gz', ref_scaled, 'asl_brain_scipy.nii.gz', order=1)
-    asl2brain.apply_to('asl_target.nii.gz', ref_scaled, 'asl_brain_scipy_spline.nii.gz', order=3)
-
-
-    # asl2brain_moco = Registration.chain(moco, asl2brain)
-    # moco = MotionCorrection(mcdir, src, src, "fsl")
-    # Registration.chain(asl2brain, moco)
-    # Registration.chain(moco, moco)
-    # Registration.chain(asl2brain, moco)
-
-    # asl2brain.apply_to('asl_target.nii.gz', ref_scaled, out='test4.nii.gz')
-    # asl2brain.apply_to('asl.nii.gz', ref_scaled, out='test2.nii.gz', cores=6)
-    # asl2brain_moco.apply_to("asl.nii.gz", ref, "asl_moco_brain.nii.gz", cores=8)
-
-    # factor = src.vox_size / ref.vox_size
-    # ref_scaled = ref.resize_voxels(factor)
-    # # ref_scaled.touch("scaled_brain.nii.gz")
-    # brain2scaled = Registration(np.eye(4), ref, ref_scaled, "world")
-    # m1 = Registration.chain((asl2brain, brain2scaled))
-    # m2 = brain2scaled * asl2brain
-    # assert np.array_equal(m1.src2ref_world, m2.src2ref_world)
-    # overall.apply_to('asl_target.nii.gz', ref_scaled, "test2.nii.gz")

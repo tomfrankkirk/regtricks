@@ -3,3 +3,5 @@ __pycache__
 *.mat
 *.txt 
 .vscode
+mcf_mats
+.DS_Store 
