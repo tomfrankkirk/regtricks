@@ -62,7 +62,7 @@ class Registration(object):
             self.__src2ref_world = (self.ref_spc.FSL2world 
                     @ src2ref @ self.src_spc.world2FSL )
 
-        elif convention.upper() == "world":
+        elif convention.lower() == "world":
             self.__src2ref_world = src2ref 
 
         else: 
@@ -137,14 +137,16 @@ class Registration(object):
         src_spc = ImageSpace(src)
 
         if not isinstance(ref, ImageSpace):
+            try: 
                 ref = ImageSpace(ref)
-        else: raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
+            except: 
+                raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
 
         img = src.get_fdata().astype(src.get_data_dtype())
         if not dtype: 
             dtype = src.get_data_dtype()
         resamp = _application_worker(img, self.ref2src_world, src_spc, 
-            ref, order, cores, **kwargs)
+            ref, cores, **kwargs)
 
         if out: 
             ref.save_image(resamp, out)
@@ -273,7 +275,7 @@ class MotionCorrection(Registration):
         if cores == 1:
             resamp = np.stack([ worker(*fm) for fm in work_list ], 3)
         else: 
-            with mp.Pool() as p: 
+            with mp.Pool(cores) as p: 
                 resamp =  np.stack(p.starmap(worker, work_list), 3) 
 
         if out: 
@@ -292,7 +294,7 @@ def chain(*args):
             will be multiplied as C * B * A)
 
     Returns: 
-        Registration object, with the first registrations' source 
+        Registration object, with the first registration's source 
         and the last's reference (if these are not None)
     """
 
@@ -330,7 +332,7 @@ def _clip_array(array, ref):
 
 
 def _application_worker(data, ref2src_world, src_spc, 
-    ref_spc, order, cores, **kwargs):
+    ref_spc, cores, **kwargs):
 
     if len(data.shape) != 4 and len(data.shape) != 3: 
         raise RuntimeError("Can only handle 3D/4D data")
@@ -340,7 +342,7 @@ def _application_worker(data, ref2src_world, src_spc,
     ref2src_vox = (src_spc.world2vox @ ref2src_world @ ref_spc.vox2world)
     ijk = ref_spc.ijk_grid('ij').reshape(-1,3).T
     ijk = _affine_transform(ref2src_vox, ijk)
-    worker = functools.partial(map_coordinates, order=order, 
+    worker = functools.partial(map_coordinates, 
         coordinates=ijk, output=data.dtype, **kwargs)
 
     if len(data.shape) == 4: 

@@ -2,4 +2,4 @@
 # from .image_space import ImageSpace
 
 from .image_space import ImageSpace
-from .base import Registration, MotionCorrection
+from .regtools import Registration, MotionCorrection, chain 
