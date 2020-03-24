@@ -253,15 +253,15 @@ class ImageSpace(object):
         return new 
 
 
-    def save_image(self, data, path):
-        """Save 3D or 4D data array at path using this image's voxel grid"""
+    def make_nifti(self, data):
+        """Construct nibabel Nifti for this voxel grid with data"""
 
         if not np.all(data.shape[0:3] == self.size):
             if data.size == np.prod(self.size):
-                print("Reshaping data to 3D volume (%s)" % path)
+                print("Reshaping data to 3D volume" % path)
                 data = data.reshape(self.size)
             elif not(data.size % np.prod(self.size)):
-                print("Saving as 4D volume (%s)" % path)
+                print("Reshaping data as 4D volume" % path)
                 data = data.reshape((*self.size, -1))
             else:
                 raise RuntimeError("Data size does not match image size")
@@ -269,11 +269,16 @@ class ImageSpace(object):
         if data.dtype is np.dtype(np.bool):
             data = data.astype(np.int8)
 
+        nii = nibabel.nifti2.Nifti2Image(data, self.vox2world)
+        nii.header.set_xyzt_units(2, None)
+        return nii 
+
+    def save_image(self, data, path):
+        """Save 3D or 4D data array at path using this image's voxel grid"""
+
         if not (path.endswith('.nii') or path.endswith('.nii.gz')):
             path += '.nii.gz'
-
-        nii = nibabel.nifti2.Nifti2Image(data, self.vox2world)
-        nii.header.set_xyzt_units(2,None)
+        nii = self.make_nifti(data)
         nibabel.save(nii, path)
 
 
@@ -306,9 +311,9 @@ class ImageSpace(object):
             a transformed copy of this image space 
         """
 
-        from . import base
+        from regtools import Registration
 
-        if isinstance(reg, base.Registration):
+        if isinstance(reg, Registration):
             reg = reg.src2ref_world
         if not isinstance(reg, np.ndarray):
             raise RuntimeError("argument must be a np.array or Registration")
@@ -338,3 +343,10 @@ class ImageSpace(object):
             text += f"""
                 loaded from: (no direct file counterpart)"""
         return textwrap.dedent(text)
+
+    
+    def __eq__(self, other):
+
+        f1 = np.allclose(self.vox2world, other.vox2world)
+        f2 = np.allclose(self.size, other.size)
+        return all([f1, f2])
