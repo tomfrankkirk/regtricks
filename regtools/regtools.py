@@ -2,6 +2,7 @@ import os.path as op
 import glob 
 import multiprocessing as mp
 import functools 
+import copy 
 
 import nibabel 
 import numpy as np 
@@ -10,7 +11,6 @@ from scipy.ndimage.interpolation import map_coordinates
 from toblerone import utils 
 
 from .image_space import ImageSpace
-# ImageSpace = image_space.ImageSpace()
 
 class Registration(object):
     """
@@ -77,6 +77,7 @@ class Registration(object):
         else: 
             return None 
 
+
     @property
     def ref_header(self):
         """Nibabel header for the original header image"""
@@ -84,18 +85,22 @@ class Registration(object):
             return self.ref_spc.header 
         else: 
             return None 
-        
+
+
     @property
     def ref2src_world(self):
         return np.linalg.inv(self.__src2ref_world)
 
+   
     @property
     def src2ref_world(self):
         return self.__src2ref_world
 
+
     def inverse(self):
         return Registration(self.ref2src_world, src=self.ref_spc, 
             ref=self.src_spc, convention='world')
+
 
     def to_fsl(self, src, ref):
         if not isinstance(src, ImageSpace):
@@ -105,17 +110,21 @@ class Registration(object):
 
         return ref.world2FSL @ self.src2ref_world @ src.FSL2world
 
+
     def save_fsl(self, src, ref, path):
         np.savetxt(path, self.to_fsl(src, ref))
-        
+
+
     def save_world(self, fname):
         np.savetxt(fname, self.src2ref_world)
 
 
-    def apply_to(self, src, ref, out='', dtype=None, cores=1, **kwargs):
+    def apply_to_image(self, src, ref, out=None, dtype=None, cores=1, **kwargs):
         """
-        Apply registration transform to image. Uses scipy.ndimage.interpolation.
-        map_coordinates, see that documentation for valid **kwargs. 
+        Applies registration transform to image data and inserts the output 
+        into a new reference voxel grid. Uses scipy.ndimage.interpolation.
+        map_coordinates, see that documentation for **kwargs. 
+
 
         Args:   
             src: either a nibabel Image object, or path to image file, 
@@ -142,16 +151,17 @@ class Registration(object):
             except: 
                 raise RuntimeError("ref must be a nibabel Nifti, ImageSpace, or path")
 
-        img = src.get_fdata().astype(src.get_data_dtype())
-        if not dtype: 
-            dtype = src.get_data_dtype()
-        resamp = _application_worker(img, self.ref2src_world, src_spc, 
-            ref, cores, **kwargs)
+            img = src.get_fdata().astype(src.get_data_dtype())
+            if not dtype: 
+                dtype = src.get_data_dtype()
+            resamp = _application_worker(img, self.ref2src_world, src_spc, ref, 
+                cores, **kwargs)
 
-        if out: 
-            ref.save_image(resamp, out)
+            if out: 
+                ref.save_image(resamp, out)
 
-        return resamp 
+            return ref.make_nifti(resamp)
+
 
     def __mul__(self, other):
 
@@ -168,8 +178,8 @@ class Registration(object):
         elif ((type(self) is MotionCorrection) 
             or (type(other) is MotionCorrection)):
             
-            pre = Registration.identity()
-            post = Registration.identity()
+            pre = Registration.identity(src, ref)
+            post = Registration.identity(src, ref)
             if type(self) is Registration: 
                 pre = self
                 moco = other 
@@ -187,13 +197,15 @@ class Registration(object):
 
         return ret 
 
-    @classmethod
-    def identity(cls):
-        return Registration(np.eye(4), convention="world")
 
     @classmethod
-    def eye(cls):
-        return Registration.identity()
+    def identity(cls, src=None, ref=None):
+        return Registration(np.eye(4), src, ref, convention="world")
+
+
+    @classmethod
+    def eye(cls, src=None, ref=None):
+        return Registration.identity(src, ref)
 
 
 class MotionCorrection(Registration):
@@ -226,24 +238,57 @@ class MotionCorrection(Registration):
     def src_spc(self): 
         return self.transforms[0].src_spc
 
+
     @property
     def ref_spc(self):
         return self.transforms[0].ref_spc
+
 
     @property
     def transforms(self):
         return self.__transforms
 
+
     @property 
     def src2ref_world_mats(self):
         return [ t.src2ref_world for t in self.__transforms ]
+
 
     @property
     def ref2src_world_mats(self):
         return [ t.ref2src_world for t in self.__transforms ]
 
-    def apply_to(self, src, ref, out='', order=1, dtype=None, 
+
+    @property
+    def ref2src_world(self):
+        raise NotImplementedError("Does not make sense for motion correction")
+
+
+    @property 
+    def src2ref_world(self):
+        raise NotImplementedError("Does not make sense for motion correction")
+    
+
+    def apply_to(self, src, ref, out=None, dtype=None, 
         cores=mp.cpu_count(), **kwargs):
+        """
+        Apply motion correction to timeseries data. See scipy.nidimage.
+        interpolate.map_coordinates for **kwargs (including order of 
+        spline interpolation). Note that this function performs resampling 
+        
+        Args: 
+            src: str or nibabel Nifti, timeseries to correct
+            ref: str, nibabel Nifti, or ImageSpace, reference space in 
+                which to place ouput 
+            out: (optional) path to save output at 
+            dtype: (optional) output datatype (default same as input)
+            cores: (optional) number of cores to use (default max)
+            **kwargs: any accepted by scipy map_coordinates (inc. order of
+                spline interpolation, 1-5)
+        
+        Returns: 
+            nibabel Nifti object 
+        """ 
         
         if isinstance(src, str):
             src = nibabel.load(src)
@@ -269,6 +314,7 @@ class MotionCorrection(Registration):
             raise RuntimeError("Number of motion correction matrices does" +
                 "not match length in series.")
 
+
         worker = functools.partial(_application_worker, 
             src_spc=src_spc, ref_spc=ref, cores=1, **kwargs)
         work_list = zip(img, self.ref2src_world_mats)
@@ -281,7 +327,7 @@ class MotionCorrection(Registration):
         if out: 
             ref.save_image(resamp, out)
         
-        return resamp
+        return ref.make_nifti(resamp)
 
 
 def chain(*args):
@@ -303,7 +349,7 @@ def chain(*args):
     else: 
         if not all([isinstance(r, Registration) for r in args ]):
             raise RuntimeError("Each item in sequence must be a" + 
-                " Registration.")
+                " Registration or MotionCorrection.")
         chained = args[1] * args[0]
         for r in args[2:]:
             chained = r * chained 
@@ -312,6 +358,7 @@ def chain(*args):
 
 
 def _affine_transform(matrix, points): 
+    """Affine transform a 3D set of points"""
     transpose = False 
     if points.shape[1] == 3: 
         transpose = True 
@@ -325,14 +372,29 @@ def _affine_transform(matrix, points):
 
 
 def _clip_array(array, ref):
+    """Clip array values to min/max of that contained in ref"""
     min_max = (ref.min(), ref.max())
     array[array < min_max[0]] = min_max[0]
     array[array > min_max[1]] = min_max[1]
     return array 
 
 
-def _application_worker(data, ref2src_world, src_spc, 
-    ref_spc, cores, **kwargs):
+def _application_worker(data, ref2src_world, src_spc, ref_spc, cores, **kwargs):
+    """
+    Worker function for Registration and MotionCorrection apply_to_image()
+
+    Args: 
+        data: np.array of data (3D or 4D)
+        ref2src_world: transformation between reference space and source, 
+            in world-world terms
+        src_spc: ImageSpace in which data currently lies
+        ref_spc: ImageSpace towards which data will be transformed
+        cores: number of cores to use (for 4D data)
+        **kwargs: passed onto scipy.ndimage.interpolate.map_coordinates
+
+    Returns: 
+        np.array of transformed data 
+    """
 
     if len(data.shape) != 4 and len(data.shape) != 3: 
         raise RuntimeError("Can only handle 3D/4D data")
@@ -342,9 +404,12 @@ def _application_worker(data, ref2src_world, src_spc,
     ref2src_vox = (src_spc.world2vox @ ref2src_world @ ref_spc.vox2world)
     ijk = ref_spc.ijk_grid('ij').reshape(-1,3).T
     ijk = _affine_transform(ref2src_vox, ijk)
-    worker = functools.partial(map_coordinates, 
-        coordinates=ijk, output=data.dtype, **kwargs)
+    worker = functools.partial(map_coordinates, coordinates=ijk, 
+        output=data.dtype, **kwargs)
 
+    # Move the 4th dimension to the front, so that we can iterate over each 
+    # volume of the timeseries. If 3D data, pad out the array with a
+    # singleton dimension at the front to get the same effect 
     if len(data.shape) == 4: 
         data = np.moveaxis(data, 3, 0)
     else: 
@@ -356,6 +421,14 @@ def _application_worker(data, ref2src_world, src_spc,
         with mp.Pool(cores) as p: 
             resamp = p.map(worker, data)
 
+    # Undo the changes we made to the data dimensions 
+    if len(data.shape) == 4: 
+        data = np.moveaxis(data, 0, 3)
+    else: 
+        data = np.squeeze(data)
+
+    # Stack all the individual volumes back up in time dimension 
+    # Clip the array to the original min/max values 
     resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
     return _clip_array(np.squeeze(resamp), data) 
 
