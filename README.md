@@ -6,7 +6,7 @@ Tools for manipulating, combining and applying image transformations.
 
 The following three classes are provided for working with registrations, motion corrections and image spaces. 
 
-`Registration`: a 4x4 affine transformation, that optionally can be associated with a specific source and reference image ('from' and 'to'). Internally, all registrations are stored in world-world terms, and all interactions between registrations are also in world-world terms unless expressly requested. 
+`Registration`: a 4x4 affine transformation, that optionally can be associated with a specific source and reference image. Internally, all registrations are stored in world-world terms, and all interactions between registrations are also in world-world terms unless expressly requested. 
 
 `MotionCorrection`: a sequence of `Registration` objects, one for each volume of a timeseries. 
 
@@ -14,14 +14,15 @@ The following three classes are provided for working with registrations, motion 
 
 ## Loading, converting and saving
 
-`Registration` objects can be initialised from a text file or `np.array`. If the registration was produced by FLIRT, paths to the source and reference images are required to convert the transformation. 
+`Registration` objects can be initialised from a text file or `np.array`. If the registration was produced by FLIRT, paths to the source and reference images are required to convert the transformation into world-world terms. 
 
 ```python  
 src = 'source_image.nii.gz'
 ref = 'reference_image.nii.gz'
 
-# A simple array is assumed to be in world-world terms 
-r1 = Registration(an_array)
+# A simple array is assumed to be in world-world terms, but we can state the 
+# convention explicitly if we want 
+r1 = Registration(an_array, convention='world')
 # Convert to FSL, returns a np.array
 r1.to_fsl(src, ref) 
 # Save as FSL
@@ -44,27 +45,34 @@ r2.inverse().save_txt('r2_inv_fsl.txt', ref, src, 'fsl')
 r2.save_txt('r2_fsl_samespace.txt', src, src, 'fsl')
 ```
 
-`MotionCorrection` objects can be initialised from a directory containing transformations, a list of text file paths, or a list of `np.array`s. Once again, if the registration was produced by MCFLIRT, paths to the source and reference images are required to convert the transformation. The convention will be assumed as with `Registration`, or you can state it explicitly. 
+`MotionCorrection` objects can be initialised from a directory containing transformations, a list of text file paths, or a list of `np.array` objects. Once again, if the registration was produced by MCFLIRT, paths to the source and reference images are required to convert the transformation from FSL to world-world terms. The convention will be assumed as with `Registration`, or you can state it explicitly. 
 
 ```python
-m1 = MotionCorrection('mcflirt_directory', src) # load from MCFLIRT directory
-m1.save_txt('world_directory') # save as text files, world-world
-m2 = MotionCorrection(list_of_arrays) # create from list of arrays
+src = 'some_timeseries.nii.gz'
+# load from MCFLIRT directory
+m1 = MotionCorrection('mcflirt_directory', src) 
+# save as text files, world-world
+m1.save_txt('world_directory') 
+# create from list of arrays
+m2 = MotionCorrection(list_of_arrays) 
 ```
 
-`ImageSpace` objects can be initialised with a nibabel Nifti object or a path to Nifti image. 
+`ImageSpace` objects can be initialised with a nibabel Nifti object or a path to a Nifti image. 
 ```python
-src_spc = ImageSpace(src_nifti) # from a nibabel nifti 
-ref_spc = ImageSpace('ref.nii.gz') # from a path 
-ref_spc.save_image(some_array, 'array_in_ref.nii.gz') # save some data in this space 
+# from a nibabel nifti 
+src_spc = ImageSpace(src_nifti) 
+# from a path 
+ref_spc = ImageSpace('ref.nii.gz') 
+# save some random data in this space 
+ref_spc.save_image(np.random.rand(ref_spc.size), 'array_in_ref.nii.gz') 
 ```
 
 ## Combining transformations
 
-Transformations may be combined my matrix multiplication. `Registration`s, `MotionCorrection`s and `np.array`s can all be combined in this manner. Note that the result of a multiplication with a `np.array` will be a `Registration` object. When multiplying a `MotionCorrection` and a `Registration`, the result will be a new `MotionCorrection` object. The order of multiplication is important: to apply the transformation A then B, the matrix multiplication `B @ A` should be used. The safest way of combining registrations is to use the `chain()` function - it works on any number of transforms and takes care of the order for you!
+Transformations may be combined my matrix multiplication. `Registration`, `MotionCorrection` and `np.array` objects can all be combined in this manner. Note that the product of a `np.array` and `Registration` is a new `Registration`, and the product of anything with a `MotionCorrection` is a new `MotionCorrection`. The order of multiplication is important: to apply the transformation A then B, the matrix multiplication `B @ A` should be used. **The safest way of combining registrations is to use the `chain()` function - it works on any number of transformations and takes care of the order for you!**
 
 ```python
-# Three images (A,B,C), and three transformations: A->B, motion correction for A
+# Three images (A,B,C) and three transformations: A->B, motion correction for A, 
 # and C->B. 
 a2a_moco = MotionCorrection('a_mcflirt_directory', 'a.nii.gz')
 a2b = Registration('a2b.txt')
@@ -83,7 +91,7 @@ a2c_moco.save_txt('a2c_moco_dir', 'a.nii.gz', 'c.nii.gz')
 
 ## Applying transformations 
 
-Both `Registration`s and `MotionCorrection`s may applied with the `apply_to()` method. This uses SciPy's `ndimage.interpolation.map_coordinates()` function under the hood, permitting spline interpolation from order 1 (trilinear) to 5 (quintic) with pre-filtering to reduce interpolation artefacts. All `**kwargs` accepted by `map_coordinates()` may be passed to `apply_to()`. 
+Both `Registration` and `MotionCorrection` objects may applied with the `apply_to()` method. This uses SciPy's `ndimage.interpolation.map_coordinates()` function under the hood, permitting spline interpolation from order 1 (trilinear) to 5 (quintic) with pre-filtering to reduce interpolation artefacts. All `**kwargs` accepted by `map_coordinates()` may be passed to `apply_to()`. 
 
 ```python
 a_img_3D = 'some_volume.nii.gz'
