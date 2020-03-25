@@ -119,6 +119,36 @@ class Registration(object):
         np.savetxt(fname, self.src2ref_world)
 
 
+    def apply_to_grid(self, src, out=None, dtype=None):
+        """
+        Apply registration to the voxel grid of an image, retaining original
+        voxel data (no resampling). This is equivalent to shifting the image
+        within world space but not altering the contents of the image itself.
+
+        Args: 
+            src: either a nibabel Image object or path string to one
+            out: (optional) where to save output 
+            dtype: (optional) datatype (default same as input)
+        
+        Returns: 
+            nibabel Nifti object 
+        """
+
+        if isinstance(src, str):
+            src = nibabel.load(src)
+        if type(src) is not nibabel.Nifti1Image:
+            raise RuntimeError("src must be a nibabel Nifti or path to image")
+
+        src_spc = ImageSpace(src)
+        new_spc = src_spc.transform(self.src2ref_world)
+        nii = new_spc.make_nifti(src.dataobj)
+
+        if out: 
+            nibabel.save(nii, out)
+        
+        return nii 
+
+
     def apply_to_image(self, src, ref, out=None, dtype=None, cores=1, **kwargs):
         """
         Applies registration transform to image data and inserts the output 
@@ -141,7 +171,7 @@ class Registration(object):
 
         if isinstance(src, str):
             src = nibabel.load(src)
-        elif not isinstance(src, nibabel.Nifti1Image):
+        elif type(src) is not nibabel.Nifti1Image:
             raise RuntimeError("src must be a nibabel Nifti or path to image")
         src_spc = ImageSpace(src)
 
@@ -163,23 +193,41 @@ class Registration(object):
             return ref.make_nifti(resamp)
 
 
-    def __mul__(self, other):
+    # Allow overriding of the form (other @ self) - as the other will not 
+    # know how to interpret this object, __rmatmul__ will instead be called
+    # on self. The actual multiplication is handled by matmul, below.
+    def __rmatmul__(self, other):
+        return Registration(other @ self.src2ref_world, 
+            self.src_spc, None, "world") 
 
-        src = other.src_spc    
-        ref = self.ref_spc 
+
+    # We need to explicitly not implement np array_ufunc to allow overriding
+    # of __matmul__, see: https://github.com/numpy/numpy/issues/9028
+    __array_ufunc__ = None 
+    def __matmul__(self, other):
+        """
+        Matrix multiplication of registrations and motion corrections. The 
+        order of arguments follows matrix conventions: to get the transform 
+        AB, the multiplication needs to be B @ A. Any multiplication between
+        a registration and motion correction will cause the result to also be 
+        a motion correction. 
+
+        Accepted types: 4x4 np.array, registration, motion correction
+        """
 
         if ((type(self) is MotionCorrection) 
             and (type(other) is MotionCorrection)):
             
-            world_mats = [ m1 * m2 for m1,m2 in 
+            world_mats = [ m1 @ m2 for m1,m2 in 
                 zip(self.src2ref_world_mats, other.src2ref_world_mats) ]
-            ret = MotionCorrection(world_mats, src, ref, convention="world")
+            ret = MotionCorrection(world_mats, other.src_spc, self.ref_spc, 
+                convention="world")
 
         elif ((type(self) is MotionCorrection) 
             or (type(other) is MotionCorrection)):
             
-            pre = Registration.identity(src, ref)
-            post = Registration.identity(src, ref)
+            pre = Registration.identity(other.src_spc, self.ref_spc)
+            post = Registration.identity(other.src_spc, self.ref_spc)
             if type(self) is Registration: 
                 pre = self
                 moco = other 
@@ -188,12 +236,23 @@ class Registration(object):
                 moco = self 
                 post = other
 
-            world_mats = [ pre * m * post for m in moco.transforms ]
-            ret = MotionCorrection(world_mats, src, ref, convention="world")
+            world_mats = [ pre @ m @ post for m in moco.transforms ]
+            ret = MotionCorrection(world_mats, other.src_spc, self.ref_spc,
+                convention="world")
+
+        elif ((type(self) is Registration) 
+            and (type(other) is Registration)): 
+
+            overall_world = self.src2ref_world @ other.src2ref_world
+            ret = Registration(overall_world, other.src_spc, self.ref_spc, 
+                convention="world")
+
+        elif type(other) is np.ndarray: 
+            overall_world = self.src2ref_world @ other 
+            ret = Registration(overall_world, None, self.ref_spc, "world")
 
         else: 
-            overall_world = self.src2ref_world @ other.src2ref_world
-            ret = Registration(overall_world, src, ref, "world")
+            raise RuntimeError("Unsupported argument type")
 
         return ret 
 
@@ -337,7 +396,7 @@ def chain(*args):
     Args: 
         *args: Registration objects, given in the order that they need to be 
             applied (eg, for A -> B -> C, give them in that order and they 
-            will be multiplied as C * B * A)
+            will be multiplied as C @ B @ A)
 
     Returns: 
         Registration object, with the first registration's source 
@@ -350,9 +409,9 @@ def chain(*args):
         if not all([isinstance(r, Registration) for r in args ]):
             raise RuntimeError("Each item in sequence must be a" + 
                 " Registration or MotionCorrection.")
-        chained = args[1] * args[0]
+        chained = args[1] @ args[0]
         for r in args[2:]:
-            chained = r * chained 
+            chained = r @ chained 
 
     return chained 
 
