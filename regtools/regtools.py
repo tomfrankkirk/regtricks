@@ -4,6 +4,7 @@ import multiprocessing as mp
 import functools 
 import copy 
 import os 
+from textwrap import dedent
 
 import nibabel 
 import numpy as np 
@@ -68,6 +69,23 @@ class Registration(object):
 
         else: 
             raise RuntimeError("Unrecognised convention")
+
+
+    def __repr__(self):
+        s = 'defined' if self.src_spc.file_name else 'none'
+        r = 'defined' if self.ref_spc.file_name else 'none'
+        
+        formatter = "{:8.3f}".format 
+        with np.printoptions(precision=3, formatter={'all': formatter}):
+            text = (f"""\
+                Registration with properties:
+                source:        {s}, 
+                reference:     {r}, 
+                src2ref_world: {self.src2ref_world[0,:]}
+                               {self.src2ref_world[1,:]}
+                               {self.src2ref_world[2,:]}
+                               {self.src2ref_world[3,:]}""")
+        return dedent(text)
 
 
     @property
@@ -310,6 +328,25 @@ class MotionCorrection(Registration):
             else: 
                 m = mat 
             self.__transforms.append(m)
+
+
+    def __repr__(self):
+        t = self.__transforms[0]
+        s = 'defined' if self.src_spc.file_name else 'none'
+        r = 'defined' if self.ref_spc.file_name else 'none'
+
+        formatter = "{:8.3f}".format 
+        with np.printoptions(precision=3, formatter={'all': formatter}):
+            text = (f"""\
+                MotionCorrection with properties:
+                source:          {s}, 
+                reference:       {r}, 
+                series length:   {len(self.__transforms)}
+                src2ref_world_0: {t.src2ref_world[0,:]}
+                                 {t.src2ref_world[1,:]}
+                                 {t.src2ref_world[2,:]}
+                                 {t.src2ref_world[3,:]}""")
+        return dedent(text)
 
     
     def save_txt(outdir, src, ref, convention="world"):
