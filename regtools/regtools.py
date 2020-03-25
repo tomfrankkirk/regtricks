@@ -3,6 +3,7 @@ import glob
 import multiprocessing as mp
 import functools 
 import copy 
+import os 
 
 import nibabel 
 import numpy as np 
@@ -111,12 +112,11 @@ class Registration(object):
         return ref.world2FSL @ self.src2ref_world @ src.FSL2world
 
 
-    def save_fsl(self, src, ref, path):
-        np.savetxt(path, self.to_fsl(src, ref))
-
-
-    def save_world(self, fname):
-        np.savetxt(fname, self.src2ref_world)
+    def save_txt(self, fname, src, ref, convention):
+        if convention.lower() == "fsl":
+            np.savetxt(path, self.to_fsl(src, ref))
+        else: 
+            np.savetxt(path, self.src2ref_world)
 
 
     def apply_to_grid(self, src, out=None, dtype=None):
@@ -268,16 +268,35 @@ class Registration(object):
 
 
 class MotionCorrection(Registration):
+    """
+    A sequence of Registration objects, one for each volume in a timeseries. 
+    For within-series motion correction (not using an external reference), 
+    src and ref will refer to the same target. If only the src is given, then
+    ref is assumed to be the same as src (ie, within-series), with FSL 
+    convention. 
 
-    def __init__(self, mats, src, ref, convention=""):
+    Args: 
+        mats: a path to a directory containing transformation matrices, in
+            name order (all files will be loaded), or a list of individual
+            filenames, or a list of np.arrays 
+        src: (optional) either the path to the source image, or an ImageSpace
+            object representing the source 
+        ref: (optional) either the path to the reference image, or an Image
+            Space representing the source (NB this is usually the same as 
+            the src image)
+        convention: (optional) the convention used for each transformation
+            (if src and ref are given, 'fsl' is assumed, otherwise 'world')
+    """
+
+    def __init__(self, mats, src=None, ref=None, convention=None):
 
         if isinstance(mats, str):
-            mats = glob.glob(op.join(mats, '*'))
+            mats = sorted(glob.glob(op.join(mats, '*')))
             if not mats: 
                 raise RuntimeError("Did not find any matrices in %s" % mats)
 
         if not convention: 
-            if (src is not None) and (ref is not None):
+            if (src is not None):
                 print("Assuming FSL convention")
                 convention = "fsl"
             else: 
@@ -292,6 +311,13 @@ class MotionCorrection(Registration):
                 m = mat 
             self.__transforms.append(m)
 
+    
+    def save_txt(outdir, src, ref, convention="world"):
+        os.makedirs(outdir, exist_ok=True)
+        for idx, r in enumerate(self.__transforms):
+            p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
+            r.save_txt(p, src, ref, convention)
+            
 
     @property
     def src_spc(self): 
