@@ -11,8 +11,13 @@ import numpy as np
 from scipy.interpolate import interpn
 from scipy.ndimage.interpolation import map_coordinates
 from toblerone import utils 
+import h5py as h5
 
 from .image_space import ImageSpace
+from . import x5_interface as x5 
+
+def load(path):
+    return x5.load(path)
 
 class Registration(object):
     """
@@ -135,6 +140,11 @@ class Registration(object):
             np.savetxt(path, self.to_fsl(src, ref))
         else: 
             np.savetxt(path, self.src2ref_world)
+
+
+    def save(self, path):
+        h5_interface.save(self, path)
+        return 
 
 
     def apply_to_grid(self, src, out=None, dtype=None):
@@ -348,13 +358,39 @@ class MotionCorrection(Registration):
                                  {t.src2ref_world[3,:]}""")
         return dedent(text)
 
+
+    # Multiplication is handled by the Registration class 
+    __matmul__ = Registration.__matmul__
+    __rmatmul__ = Registration.__rmatmul__
+
     
     def save_txt(outdir, src, ref, convention="world"):
         os.makedirs(outdir, exist_ok=True)
         for idx, r in enumerate(self.__transforms):
             p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
             r.save_txt(p, src, ref, convention)
-            
+
+
+    def save(self, path):
+        ext = op.splitext(path)[1]
+        if ext != '.x5':
+            path += '.x5'
+
+        with h5.File(path, 'w') as f: 
+            f.attrs['Type'] = 'linear_timeseries'
+            x5.write_metadata(f)
+
+            g = f.create_group('/Transform')
+            x5.write_affine(g, 
+                np.stack(self.src2ref_world_mats, axis=2), 
+                np.stack(self.ref2src_world_mats, axis=2))
+
+            g = f.create_group('/A')
+            x5.write_imagespace(g, self.src_spc)
+
+            g = f.create_group('/B')
+            x5.write_imagespace(g, self.ref_spc)
+
 
     @property
     def src_spc(self): 
