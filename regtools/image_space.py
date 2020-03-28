@@ -53,10 +53,19 @@ class ImageSpace(object):
         spc.vox2world = vox2world
         spc.size = size 
         spc.vox_size = vox_size
-        spc.header = None 
+        spc.header = spc.make_nifti_header()
         spc._offset = None 
         spc.file_name = None 
         return spc 
+
+
+    def make_nifti_header(self):
+        hdr = nibabel.Nifti2Header()
+        hdr.set_data_shape(self.size)
+        hdr.set_zooms(self.vox_size)
+        hdr.set_sform(self.vox2world, 'aligned')
+        nii.header.set_xyzt_units(2, None)
+        return hdr 
 
 
     @classmethod 
@@ -86,7 +95,8 @@ class ImageSpace(object):
         spc.vox2world[0:3,3] = orig 
         spc.size = size 
         spc.vox_size = vox_size
-        self.file_name = None 
+        spc.file_name = None 
+        spc.header = spc.make_nifti_header()
         return spc 
 
 
@@ -269,9 +279,10 @@ class ImageSpace(object):
         if data.dtype is np.dtype(np.bool):
             data = data.astype(np.int8)
 
-        nii = nibabel.nifti2.Nifti2Image(data, self.vox2world)
-        nii.header.set_xyzt_units(2, None)
+        nii = nibabel.nifti2.Nifti2Image(data, self.vox2world, 
+            header=self.header)
         return nii 
+
 
     def save_image(self, data, path):
         """Save 3D or 4D data array at path using this image's voxel grid"""
