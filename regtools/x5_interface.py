@@ -1,0 +1,118 @@
+"""
+X5 interface for regtools. With thanks to Paul McCarthy; this is almost a
+direct copy of his fslpy.transform.x5 module
+"""
+
+import os.path as op 
+import json
+
+import h5py
+import numpy as np 
+
+# TODO: these should be able to handle registrations without defined image spaces
+# eg, an Identity registration with src/ref set as None 
+
+X5_FORMAT  = 'X5'
+X5_VERSION = '0.1.0'
+
+class X5Error(Exception):
+    pass 
+
+def save(reg, path):
+    ext = op.splitext(path)[1]
+    if ext != '.x5':
+        path += '.x5'
+
+    with h5py.File(path, 'w') as f: 
+        f.attrs['Type'] = 'linear'
+        write_metadata(f)
+
+        g = f.create_group('/Transform')
+        write_affine(g, reg.src2ref_world, reg.ref2src_world)
+
+        g = f.create_group('/A')
+        write_imagespace(g, reg.src_spc)
+
+        g = f.create_group('/B')
+        write_imagespace(g, reg.ref_spc)
+
+
+def load(path):
+
+    from .regtools import Registration, MotionCorrection
+
+    with h5py.File(path, 'r') as f: 
+        reg_type = f.attrs['Type']
+
+        read_metadata(f['/'])
+        src_spc = read_imagespace(f['/A'])
+        ref_spc = read_imagespace(f['/B'])
+        src2ref_world = read_affine(f['/Transform'])
+        shp = src2ref_world.shape 
+
+        if reg_type == 'linear':
+            return Registration(src2ref_world, src_spc, ref_spc, "world")
+
+        elif reg_type == 'linear_timeseries':
+            return MotionCorrection(
+                [ src2ref_world[:,:,x] for x in range(shp[-1]) ], 
+                src_spc, ref_spc, "world")
+
+        else: 
+            raise X5Error("Unrecognised registration type")
+        
+            
+
+def write_metadata(group):
+    group.attrs['Format']   = X5_FORMAT
+    group.attrs['Version']  = X5_VERSION
+    group.attrs['Metadata'] = json.dumps({'regtools' : 0.1})
+
+def read_metadata(group):
+    x5_format = group.get('Format')
+    x5_version = group.get('Version')
+    return 
+
+def write_imagespace(group, spc):
+    group.attrs['Type'] = 'image'
+    group.attrs['Size'] = spc.size 
+    group.attrs['Scales'] = spc.vox_size
+    affgroup = group.create_group('Mapping')
+    write_affine(affgroup, spc.vox2world, spc.world2vox)
+
+def read_imagespace(group):
+    from .image_space import ImageSpace
+
+    if group.attrs.get('Type') != 'image':
+        raise X5Error('Group does not represent an image')
+
+    size = np.asarray(group.attrs['Size'])
+    vox_size = np.asarray(group.attrs['Scales'])
+    vox2world = read_affine(group['Mapping'])
+    if not ((size.size == 3) and (vox_size.size == 3)):
+        raise X5Error('Incorrect Size and Scales')
+    
+    return ImageSpace.manual(vox2world, size, vox_size)
+
+def write_affine(group, matrix, inverse):
+    
+    group.attrs['Type'] = 'affine'
+    # if len(matrix.shape) == 2: 
+    group.create_dataset('Matrix',  data=matrix)
+    group.create_dataset('Inverse', data=inverse)
+    # elif len(matrix.shape) == 3: 
+    #     group.create_dataset('Matrix',)
+    # else: 
+    #     raise X5Error("Matrix must be 2D or 3D")
+
+
+def read_affine(group):
+    if group.attrs.get('Type') != 'affine':
+        raise X5Error('Group does not represent affine')
+
+    matrix = group['Matrix']
+    if not matrix.shape[0:2] == (4,4):
+        raise X5Error('Incorrect matrix dimensions')
+
+    return np.asarray(matrix)
+
