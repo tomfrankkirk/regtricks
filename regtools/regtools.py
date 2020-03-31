@@ -16,8 +16,6 @@ import h5py as h5
 from .image_space import ImageSpace
 from . import x5_interface as x5 
 
-def load(path):
-    return x5.load(path)
 
 class Registration(object):
     """
@@ -77,8 +75,8 @@ class Registration(object):
 
 
     def __repr__(self):
-        s = 'defined' if self.src_spc.file_name else 'none'
-        r = 'defined' if self.ref_spc.file_name else 'none'
+        s = self._repr_helper(self.src_spc)
+        r = self._repr_helper(self.ref_spc)
         
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
@@ -91,6 +89,15 @@ class Registration(object):
                                {self.src2ref_world[2,:]}
                                {self.src2ref_world[3,:]}""")
         return dedent(text)
+
+
+    def _repr_helper(self, spc):
+        if not spc: 
+            return "(none defined)"
+        elif spc.file_name: 
+            return self.src_spc.file_name
+        else:  
+            return "ImageSpace object"
 
 
     @property
@@ -143,8 +150,7 @@ class Registration(object):
 
 
     def save(self, path):
-        h5_interface.save(self, path)
-        return 
+        x5.save_manager(self, path)
 
 
     def apply_to_grid(self, src, out=None, dtype=None):
@@ -342,8 +348,8 @@ class MotionCorrection(Registration):
 
     def __repr__(self):
         t = self.__transforms[0]
-        s = 'defined' if self.src_spc.file_name else 'none'
-        r = 'defined' if self.ref_spc.file_name else 'none'
+        s = self._repr_helper(self.src_spc)
+        r = self._repr_helper(self.ref_spc)
 
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
@@ -369,27 +375,6 @@ class MotionCorrection(Registration):
         for idx, r in enumerate(self.__transforms):
             p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
             r.save_txt(p, src, ref, convention)
-
-
-    def save(self, path):
-        ext = op.splitext(path)[1]
-        if ext != '.x5':
-            path += '.x5'
-
-        with h5.File(path, 'w') as f: 
-            f.attrs['Type'] = 'linear_timeseries'
-            x5.write_metadata(f)
-
-            g = f.create_group('/Transform')
-            x5.write_affine(g, 
-                np.stack(self.src2ref_world_mats, axis=2), 
-                np.stack(self.ref2src_world_mats, axis=2))
-
-            g = f.create_group('/A')
-            x5.write_imagespace(g, self.src_spc)
-
-            g = f.create_group('/B')
-            x5.write_imagespace(g, self.ref_spc)
 
 
     @property
@@ -486,6 +471,10 @@ class MotionCorrection(Registration):
             ref.save_image(resamp, out)
         
         return ref.make_nifti(resamp)
+
+
+def load(path):
+    return x5.load_manager(path)
 
 
 def chain(*args):

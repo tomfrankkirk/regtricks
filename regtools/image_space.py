@@ -64,7 +64,7 @@ class ImageSpace(object):
         hdr.set_data_shape(self.size)
         hdr.set_zooms(self.vox_size)
         hdr.set_sform(self.vox2world, 'aligned')
-        nii.header.set_xyzt_units(2, None)
+        hdr.set_xyzt_units(2, None)
         return hdr 
 
 

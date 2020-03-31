@@ -18,26 +18,43 @@ X5_VERSION = '0.1.0'
 class X5Error(Exception):
     pass 
 
-def save(reg, path):
+def save_manager(reg, path):
+    """
+    Save Registration or MotionCorrection objects in X5 format
+    """
+
+    from regtools import MotionCorrection, Registration
+
     ext = op.splitext(path)[1]
     if ext != '.x5':
         path += '.x5'
 
     with h5py.File(path, 'w') as f: 
-        f.attrs['Type'] = 'linear'
-        write_metadata(f)
 
         g = f.create_group('/Transform')
-        write_affine(g, reg.src2ref_world, reg.ref2src_world)
+        if isinstance(reg, MotionCorrection): 
+            f.attrs['Type'] = 'linear_timeseries'
+            write_affine(g, 
+                np.stack(reg.src2ref_world_mats, axis=2), 
+                np.stack(reg.ref2src_world_mats, axis=2))
+        elif isinstance(reg, Registration):
+            f.attrs['Type'] = 'linear'
+            write_affine(g, reg.src2ref_world, reg.ref2src_world)
+        else: 
+            raise X5Error("Unrecognised registration type")
 
         g = f.create_group('/A')
         write_imagespace(g, reg.src_spc)
 
         g = f.create_group('/B')
         write_imagespace(g, reg.ref_spc)
+        write_metadata(f)
 
 
-def load(path):
+def load_manager(path):
+    """
+    Load Registration or MotionCorrection objects from X5 format
+    """
 
     from .regtools import Registration, MotionCorrection
 
@@ -61,19 +78,28 @@ def load(path):
         else: 
             raise X5Error("Unrecognised registration type")
         
-            
+        
 
 def write_metadata(group):
+    """Write X5 format metadata"""
+
     group.attrs['Format']   = X5_FORMAT
     group.attrs['Version']  = X5_VERSION
     group.attrs['Metadata'] = json.dumps({'regtools' : 0.1})
 
 def read_metadata(group):
-    x5_format = group.get('Format')
-    x5_version = group.get('Version')
+    """Read X5 format metadata"""
+
+    x5_format = group.attrs.get('Format')
+    x5_version = group.attrs.get('Version')
+    assert (x5_format is not None) and (x5_version is not None)
     return 
 
 def write_imagespace(group, spc):
+    """
+    Write ImageSpace properties (size, voxel size, vox2world) into X5 format
+    """
+
     group.attrs['Type'] = 'image'
     group.attrs['Size'] = spc.size 
     group.attrs['Scales'] = spc.vox_size
@@ -81,6 +107,11 @@ def write_imagespace(group, spc):
     write_affine(affgroup, spc.vox2world, spc.world2vox)
 
 def read_imagespace(group):
+    """
+    Read ImageSpace properties (size, voxel size, vox2world) into X5 format, 
+    and return ImageSpace object 
+    """
+
     from .image_space import ImageSpace
 
     if group.attrs.get('Type') != 'image':
@@ -90,29 +121,36 @@ def read_imagespace(group):
     vox_size = np.asarray(group.attrs['Scales'])
     vox2world = read_affine(group['Mapping'])
     if not ((size.size == 3) and (vox_size.size == 3)):
-        raise X5Error('Incorrect Size and Scales')
+        raise X5Error('Incorrect size and scales')
     
     return ImageSpace.manual(vox2world, size, vox_size)
 
 def write_affine(group, matrix, inverse):
+    """Write a single or stack of (4,4) arrays to X5 group"""
     
     group.attrs['Type'] = 'affine'
-    # if len(matrix.shape) == 2: 
+    if not matrix.shape[:2] == (4,4):
+        raise RuntimeError("Matrix must be single or stack of (4,4) shape")
     group.create_dataset('Matrix',  data=matrix)
     group.create_dataset('Inverse', data=inverse)
-    # elif len(matrix.shape) == 3: 
-    #     group.create_dataset('Matrix',)
-    # else: 
-    #     raise X5Error("Matrix must be 2D or 3D")
 
 
 def read_affine(group):
+    """Load a single or stack of (4,4) arrays to X5 group"""
     if group.attrs.get('Type') != 'affine':
         raise X5Error('Group does not represent affine')
 
     matrix = group['Matrix']
-    if not matrix.shape[0:2] == (4,4):
+    if not matrix.shape[:2] == (4,4):
         raise X5Error('Incorrect matrix dimensions')
 
     return np.asarray(matrix)
 
+
+def check_is_x5(path):
+    try: 
+        with h5.File(path, 'r') as f: 
+            read_metadata(f['/'])
+        return True 
+    except: 
+        return False
