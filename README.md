@@ -1,21 +1,30 @@
 # Regtools
-
 Tools for manipulating, combining and applying image transformations.  
 
 ```python
 # Example: motion correct and register a timeseries to a structural image
-# Load the registration matrices 
-asl2struct = Registration('asl2struct.mat', 'asl.nii.gz', 't1.nii.gz')
+# Load the registration matrices (eg produced by FLIRT/MCFLIRT)
+struct2asl = Registration('struct2asl.mat', 't1.nii.gz', 'asl.nii.gz')
 asl_moco = MotionCorrection('mcflirt_dir', 'asl.nii.gz')
 
 # Combine them into a single operation and apply to the timeseries
-asl2struct_moco = chain(asl2struct.inverse(), asl_moco)
+# The result will be saved as 'asl_t1_mc.nii.gz'
+asl2struct_moco = chain(struct2asl.inverse(), asl_moco)
 asl2struct_moco.apply('asl.nii.gz', 't1.nii.gz', 'asl_t1_mc.nii.gz')
 ```
 
-## Overview
+## Contents
+- [Regtools](#regtools)
+  - [Contents](#contents)
+  - [Overview](#overview)
+  - [Loading, converting and saving <a name="loading"></a>](#loading-converting-and-saving)
+  - [Chaining transformations](#chaining-transformations)
+  - [Applying transformations](#applying-transformations)
+  - [More examples](#more-examples)
+  - [Further reading](#further-reading)
 
-Regtools provides the following classes to work with registrations. 
+## Overview
+The following three classes are provided: 
 
 `Registration`: a 4x4 affine transformation, that optionally can be associated with a specific source and reference image. Internally, all registrations are stored in world-world terms, and all interactions between registrations are also in world-world terms. 
 
@@ -23,8 +32,7 @@ Regtools provides the following classes to work with registrations.
 
 `ImageSpace`: the voxel grid of an image, including the dimensions, voxel size and orientation (almost everything except the image itself). This class also allows easy manipulation of the grid (shifting, cropping, resizing voxels, etc)
 
-## Loading, converting and saving
-
+## Loading, converting and saving <a name="loading"></a>
 `Registration` objects can be initialised from a text file or `np.array`. If the registration was produced by FLIRT, paths to the source and reference images are required to convert the transformation into world-world terms. 
 
 ```python  
@@ -80,8 +88,7 @@ ref_spc = ImageSpace('ref.nii.gz')
 ref_spc.save_image(np.random.rand(ref_spc.size), 'rand.nii.gz') 
 ```
 
-## Combining transformations
-
+## Chaining transformations
 Transformations may be combined my matrix multiplication. `Registration`, `MotionCorrection` and `np.array` objects can all be combined in this manner. Note that the product of a `np.array` and `Registration` is a new `Registration`, and the product of anything with a `MotionCorrection` is a new `MotionCorrection`. The order of multiplication is important: to apply the transformation A then B, the matrix multiplication `B @ A` should be used. **The safest way of combining registrations is to use the `chain()` function - it works on any number of transformations and takes care of the order for you!**
 
 ```python
@@ -102,8 +109,7 @@ a2c_moco_2 = (c2b.inverse() @ a2b @ a2a_moco)
 a2c_moco.save_txt('a2c_moco_dir', 'a.nii.gz', 'c.nii.gz')
 ```
 
-## Applying transformations 
-
+## Applying transformations
 Both `Registration` and `MotionCorrection` objects may applied with the `apply_to()` method. This uses SciPy's `ndimage.interpolation.map_coordinates()` function, allowing spline interpolation of order 1 (trilinear) to 5 (quintic) with pre-filtering to reduce interpolation artefacts. All `**kwargs` accepted by `map_coordinates()` may be passed to `apply_to()`. 
 
 ```python
