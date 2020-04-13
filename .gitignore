@@ -5,3 +5,4 @@ __pycache__
 .vscode
 mcf_mats
 .DS_Store 
+*.x5 

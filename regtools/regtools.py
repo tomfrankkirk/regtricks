@@ -231,8 +231,15 @@ class Registration(object):
     # know how to interpret this object, __rmatmul__ will instead be called
     # on self. The actual multiplication is handled by matmul, below.
     def __rmatmul__(self, other):
-        return Registration(other @ self.src2ref_world, 
-            self.src_spc, None, "world") 
+        if type(other) is np.ndarray: 
+            oth = Registration(other)
+        # elif type(other) is list: 
+        #     if not all([ type(x) is np.ndarray for x in other ]):
+        #         raise RuntimeError("Incompatible list elements for multiplication")
+        #     oth = MotionCorrection(other)
+        else: 
+            assert isinstance(other, (Registration, MotionCorrection))
+        return oth @ self
 
 
     # We need to explicitly not implement np array_ufunc to allow overriding
@@ -249,11 +256,17 @@ class Registration(object):
         Accepted types: 4x4 np.array, registration, motion correction
         """
 
+        if type(other) is np.ndarray:
+            other = Registration(other)
+
         if ((type(self) is MotionCorrection) 
             and (type(other) is MotionCorrection)):
+
+            if not len(self) == len(other):
+                raise RuntimeError("MotionCorrections must be of equal length")
             
             world_mats = [ m1 @ m2 for m1,m2 in 
-                zip(self.src2ref_world_mats, other.src2ref_world_mats) ]
+                zip(self.src2ref_world, other.src2ref_world) ]
             ret = MotionCorrection(world_mats, other.src_spc, self.ref_spc, 
                 convention="world")
 
@@ -280,10 +293,6 @@ class Registration(object):
             overall_world = self.src2ref_world @ other.src2ref_world
             ret = Registration(overall_world, other.src_spc, self.ref_spc, 
                 convention="world")
-
-        elif type(other) is np.ndarray: 
-            overall_world = self.src2ref_world @ other 
-            ret = Registration(overall_world, None, self.ref_spc, "world")
 
         else: 
             raise RuntimeError("Unsupported argument type")
@@ -346,8 +355,12 @@ class MotionCorrection(Registration):
             self.__transforms.append(m)
 
 
+    def __len__(self):
+        return len(self.transforms)
+
+
     def __repr__(self):
-        t = self.__transforms[0]
+        t = self.transforms[0]
         s = self._repr_helper(self.src_spc)
         r = self._repr_helper(self.ref_spc)
 
@@ -357,7 +370,7 @@ class MotionCorrection(Registration):
                 MotionCorrection with properties:
                 source:          {s}, 
                 reference:       {r}, 
-                series length:   {len(self.__transforms)}
+                series length:   {len(self)}
                 src2ref_world_0: {t.src2ref_world[0,:]}
                                  {t.src2ref_world[1,:]}
                                  {t.src2ref_world[2,:]}
@@ -372,9 +385,14 @@ class MotionCorrection(Registration):
     
     def save_txt(outdir, src, ref, convention="world"):
         os.makedirs(outdir, exist_ok=True)
-        for idx, r in enumerate(self.__transforms):
+        for idx, r in enumerate(self.transforms):
             p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
             r.save_txt(p, src, ref, convention)
+
+
+    @property 
+    def transforms(self):
+        return self._MotionCorrection__transforms
 
 
     @property
@@ -386,31 +404,23 @@ class MotionCorrection(Registration):
     def ref_spc(self):
         return self.transforms[0].ref_spc
 
-
-    @property
-    def transforms(self):
-        return self.__transforms
-
-
+    
     @property 
-    def src2ref_world_mats(self):
-        return [ t.src2ref_world for t in self.__transforms ]
-
-
-    @property
-    def ref2src_world_mats(self):
-        return [ t.ref2src_world for t in self.__transforms ]
+    def src2ref_world(self):
+        """List of src to ref transformation matrices"""
+        return [ t.src2ref_world for t in self.transforms ]
 
 
     @property
     def ref2src_world(self):
-        raise NotImplementedError("Does not make sense for motion correction")
-
-
-    @property 
-    def src2ref_world(self):
-        raise NotImplementedError("Does not make sense for motion correction")
+        """List of ref to src transformation matrices"""
+        return [ t.ref2src_world for t in self.transforms ]
     
+
+    def inverse(self): 
+        mats = self.ref2src_world 
+        return MotionCorrection(mats, self.ref_spc, self.src_spc, 'world')
+
 
     def apply_to(self, src, ref, out=None, dtype=None, 
         cores=mp.cpu_count(), **kwargs):
@@ -460,7 +470,7 @@ class MotionCorrection(Registration):
 
         worker = functools.partial(_application_worker, 
             src_spc=src_spc, ref_spc=ref, cores=1, **kwargs)
-        work_list = zip(img, self.ref2src_world_mats)
+        work_list = zip(img, self.ref2src_world)
         if cores == 1:
             resamp = np.stack([ worker(*fm) for fm in work_list ], 3)
         else: 
