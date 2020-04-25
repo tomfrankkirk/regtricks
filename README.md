@@ -118,7 +118,11 @@ a2c_moco.save_txt('a2c_moco_dir', 'a.nii.gz', 'c.nii.gz')
 ```
 
 ## Applying transformations
-Both `Registration` and `MotionCorrection` objects may applied with the `apply_to()` method. This uses SciPy's `ndimage.interpolation.map_coordinates()` function, allowing spline interpolation of order 1 (trilinear) to 5 (quintic) with pre-filtering to reduce interpolation artefacts. All `**kwargs` accepted by `map_coordinates()` may be passed to `apply_to()`. 
+Both `Registration` and `MotionCorrection` objects may applied with the `apply_to_*()` methods. This uses SciPy's `ndimage.interpolation.map_coordinates()` function, allowing spline interpolation of order 1 (trilinear) to 5 (quintic) with pre-filtering to reduce interpolation artefacts. All `**kwargs` accepted by `map_coordinates()` may be used, and both 3D and 4D data can be handled.  
+
+* `apply_to_image()`: apply `Registration` or `MotionCorrection` to a NIFTI, MGH or FSL image object, insert result into a new image object
+* `apply_to_array()`: apply `Registration` or `MotionCorrection` to a np.array only, returning a new np.array 
+* `apply_to_grid()`: apply a `Registration` to the voxel grid of an image without resampling (ie, shift the image in world space)
 
 ```python
 a_img_3D = 'some_volume.nii.gz'
