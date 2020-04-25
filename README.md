@@ -130,19 +130,19 @@ b_img_4D = 'some_timeseries.nii.gz'
 a2b = Regisration('a2b.txt')
 b2b_moco = MotionCorrection('b_mcflirt_dir', b_img_4D)
 
-# A single registration can be applied to both 3D and 4D data
-a2b.apply_to(a_img_3D, b_img_4D) # map a onto b, return nibabel nifti
-# transform b onto a, save the result as a nifti 
-a2b.inverse().apply_to(b_img_4D, a_img3D, out='timeseries_on_a.nii.gz')
+# Transform A onto B, and output in that grid 
+x = a2b.apply_to_image(a_img_3D, b_img_4D) 
+# Transform b onto a, save the result as a nifti 
+x = a2b.inverse().apply_to_image(b_img_4D, a_img3D)
 
 # Chain the motion correction and transform b2a together 
 # MotionCorrections can only be applied to 4D data 
 b2a_moco = chain(b2b_moco, a2b.inverse())
-b2a_moco.apply_to(b_img_4D, a_img_3D, out='timeseries_on_a_mc.nii.gz')
+x = b2a_moco.apply_to_image(b_img_4D, a_img_3D)
 
 # Apply the chained transformation, but without resampling the result onto
 # the voxel grid of b_img_3D (keep it in the original space of the timeseries)
-b2a_moco.apply_to(b_img_4D, b_img_4D, out='timeseries_on_a_in_b_mc.nii.gz')
+x = b2a_moco.apply_to_image(b_img_4D, b_img_4D, out='timeseries_on_a_in_b_mc.nii.gz')
 ```
 
 ## More examples
