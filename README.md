@@ -14,7 +14,7 @@ asl2struct_moco.apply('asl.nii.gz', 't1.nii.gz', 'asl_t1_mc.nii.gz')
 ```
 
 ## Contents
-- [Installation] (#installation)
+- [Installation](#installation)
 - [Overview](#overview)
 - [Loading, converting and saving <a name="loading"></a>](#loading-converting-and-saving)
 - [Chaining transformations](#chaining-transformations)
