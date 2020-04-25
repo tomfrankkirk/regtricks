@@ -99,6 +99,10 @@ def test_apply_array():
     x = r.apply_to_array(v, SPC1, SPC1)
     assert (x == v).all()
 
+    mc = rt.MotionCorrection([ np.eye(4) for _ in range(10) ])
+    x = mc.apply_to_array(v, SPC1, SPC1)
+    assert(x == v).all()
+
 
 
 if __name__ == "__main__":
