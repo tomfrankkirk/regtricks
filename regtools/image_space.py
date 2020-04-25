@@ -5,20 +5,21 @@ spaces and also for saving images into said space (eg, save PV estimates
 into the space of an image)
 """
 
-import os.path as op 
 import copy 
-import warnings
 import textwrap
 
 import nibabel
 import numpy as np 
+from nibabel import Nifti1Image, MGHImage
+from fsl.data.image import Image as FSLImage
+
 
 class ImageSpace(object):
     """
     Voxel grid of an image, ignoring actual image data. 
 
     Args: 
-        img: either Nibabel image object, or path to equivalent
+        img: path to image, nibabel Nifti/MGH or FSL Image object
     
     Attributes: 
         size: array of voxel counts in each dimension 
@@ -34,15 +35,17 @@ class ImageSpace(object):
             fname = img 
             img = nibabel.load(img)
         else: 
-            assert isinstance(img, nibabel.Nifti1Image)
+            assert isinstance(img, (Nifti1Image, MGHImage, FSLImage))
+            if type(img) is FSLImage:
+                img = img.nibImage
             fname = img.get_filename()
 
         self.file_name = fname     
-        self.size = img.header['dim'][1:4]
-        self.vox_size = img.header['pixdim'][1:4]
+        self.size = np.array(img.shape[:3], np.int16)
+        self.vox_size = np.linalg.norm(img.affine[:3,:3], ord=2, axis=0)
         self.vox2world = img.affine
+        self.header = self.make_nifti_header()
         self._offset = None
-        self.header = img.header 
 
     
     @classmethod
@@ -51,8 +54,8 @@ class ImageSpace(object):
 
         spc = cls.__new__(cls)
         spc.vox2world = vox2world
-        spc.size = size 
-        spc.vox_size = vox_size
+        spc.size = np.array(size, np.int16)
+        spc.vox_size = np.array(vox_size)
         spc.header = spc.make_nifti_header()
         spc._offset = None 
         spc.file_name = None 
@@ -62,7 +65,8 @@ class ImageSpace(object):
     def make_nifti_header(self):
         hdr = nibabel.Nifti2Header()
         hdr.set_data_shape(self.size)
-        hdr.set_zooms(self.vox_size)
+        zooms = [*self.vox_size] + [1.0 for _ in range(3, len(self.size))]
+        hdr.set_zooms(zooms)
         hdr.set_sform(self.vox2world, 'aligned')
         hdr.set_xyzt_units(2, None)
         return hdr 
@@ -84,20 +88,12 @@ class ImageSpace(object):
             ImageSpace object 
         """
 
-        vox_size = np.array(vox_size)
-        size = np.array(size)
         bbox_corner = np.array(bbox_corner)
-
-        spc = cls.__new__(cls)
-        spc.vox2world = np.identity(4)
-        spc.vox2world[(0,1,2),(0,1,2)] = vox_size
-        orig = bbox_corner + (np.array((3*[0.5])) @ spc.vox2world[0:3,0:3])
-        spc.vox2world[0:3,3] = orig 
-        spc.size = size 
-        spc.vox_size = vox_size
-        spc.file_name = None 
-        spc.header = spc.make_nifti_header()
-        return spc 
+        vox2world = np.identity(4)
+        vox2world[(0,1,2),(0,1,2)] = vox_size
+        orig = bbox_corner + (np.array((3 * [0.5])) @ vox2world[0:3,0:3])
+        vox2world[0:3,3] = orig 
+        return cls.manual(vox2world, size, vox_size)
 
 
     @classmethod
@@ -162,7 +158,7 @@ class ImageSpace(object):
                 multi = 1000
             elif xyzt == '10':
                 multi = 1 
-            elif xyzt =='11':
+            elif xyzt == '11':
                 multi = 1e-3
 
         if det > 0:
@@ -228,7 +224,7 @@ class ImageSpace(object):
         self.save_image(vol, path)
 
 
-    def resize(self, start, strides):
+    def resize(self, start, new_size):
         """
         Resize the FoV of this space, maintaining axis alignment and voxel
         size. Can be used to both crop and expand the grid. For example, 
@@ -239,7 +235,7 @@ class ImageSpace(object):
             start: sequence of 3 ints, voxel indices by which to shift first
                 voxel (0,0,0 is origin, negative values can be used to expand
                 and positive values to crop)
-            strides: sequence of 3 ints, length in voxels for each dimension, 
+            new_size: sequence of 3 ints, length in voxels for each dimension, 
                 starting from the new origin 
 
         Returns:
@@ -247,18 +243,18 @@ class ImageSpace(object):
         """
 
         start = np.array(start)
-        strides = np.array(strides)
-        strides[strides == 0] = self.size[strides == 0]
-        if (start.size != 3) and (strides.size != 3):
+        new_size = np.array(new_size)
+        new_size[new_size == 0] = self.size[new_size == 0]
+        if (start.size != 3) and (new_size.size != 3):
             raise RuntimeError("Extents must be 3 elements each")
 
-        if np.any(strides < 0):
-            raise RuntimeError("Strides must be positive")
+        if np.any(new_size < 0):
+            raise RuntimeError("new_size must be positive")
 
         new = copy.deepcopy(self)
         new_orig = self.vox2world[0:3,3] + (self.vox2world[0:3,0:3] @ start) 
         new.vox2world[0:3,3] = new_orig
-        new.size = strides 
+        new.size = new_size 
         new.file_name = None 
         return new 
 
@@ -268,10 +264,10 @@ class ImageSpace(object):
 
         if not np.all(data.shape[0:3] == self.size):
             if data.size == np.prod(self.size):
-                print("Reshaping data to 3D volume" % path)
+                print("Reshaping data to 3D volume")
                 data = data.reshape(self.size)
             elif not(data.size % np.prod(self.size)):
-                print("Reshaping data as 4D volume" % path)
+                print("Reshaping data as 4D volume")
                 data = data.reshape((*self.size, -1))
             else:
                 raise RuntimeError("Data size does not match image size")
