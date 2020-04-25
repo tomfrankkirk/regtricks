@@ -14,6 +14,7 @@ asl2struct_moco.apply('asl.nii.gz', 't1.nii.gz', 'asl_t1_mc.nii.gz')
 ```
 
 ## Contents
+- [Installation] (#installation)
 - [Overview](#overview)
 - [Loading, converting and saving <a name="loading"></a>](#loading-converting-and-saving)
 - [Chaining transformations](#chaining-transformations)
@@ -21,6 +22,14 @@ asl2struct_moco.apply('asl.nii.gz', 't1.nii.gz', 'asl_t1_mc.nii.gz')
 - [More examples](#more-examples)
 - [Further reading](#further-reading)
 
+## Installation
+
+Installation into the current python environment: 
+```bash
+git clone https://github.com/tomfrankkirk/regtools
+cd regtools
+python -m pip setup . 
+```
 
 ## Overview
 The following three classes are provided: 
