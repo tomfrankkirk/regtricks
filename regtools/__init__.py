@@ -3,3 +3,4 @@
 
 from .image_space import ImageSpace
 from .regtools import Registration, MotionCorrection, chain, load
+from .wrappers import flirt, mcflirt
