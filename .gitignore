@@ -6,3 +6,4 @@ __pycache__
 mcf_mats
 .DS_Store 
 *.x5 
+scratch.py
