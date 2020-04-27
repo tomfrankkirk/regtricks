@@ -28,7 +28,7 @@ Installation into the current python environment:
 ```bash
 git clone https://github.com/tomfrankkirk/regtools
 cd regtools
-python -m pip setup . 
+python -m pip install . 
 ```
 
 ## Overview
