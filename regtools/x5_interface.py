@@ -6,7 +6,7 @@ direct copy of his fslpy.transform.x5 module
 import os.path as op 
 import json
 
-import h5py
+import h5py 
 import numpy as np 
 
 # TODO: these should be able to handle registrations without defined image spaces
@@ -53,7 +53,7 @@ def save_manager(reg, path):
 
 def load_manager(path):
     """
-    Load Registration or MotionCorrection objects from X5 format
+    Load transformation objects from X5 format
     """
 
     from .regtools import Registration, MotionCorrection
@@ -149,7 +149,7 @@ def read_affine(group):
 
 def check_is_x5(path):
     try: 
-        with h5.File(path, 'r') as f: 
+        with h5py.File(path, 'r') as f: 
             read_metadata(f['/'])
         return True 
     except: 
