@@ -1,9 +1,12 @@
 import functools
 import multiprocessing as mp 
+import tempfile 
+import os.path as op 
 
 import nibabel
 from nibabel import Nifti1Image, MGHImage
 from fsl.data.image import Image as FSLImage
+from fsl.wrappers import applywarp
 import numpy as np 
 from scipy.ndimage import map_coordinates
 
@@ -21,6 +24,16 @@ def src_load_helper(src):
                            " or path to image")
 
     return data, type(src)
+
+
+def _reshape_for_iterate(data):
+    if len(data.shape) == 4: 
+        return np.moveaxis(data, 3, 0)
+    else: 
+        return data.reshape(1, *data.shape)
+
+def _reshape_after_iterate(data):
+    pass
 
 
 
@@ -50,10 +63,7 @@ def _application_worker(data, transform, src_spc, ref_spc, cores, **kwargs):
     # Move the 4th dimension to the front, so that we can iterate over each 
     # volume of the timeseries. If 3D data, pad out the array with a
     # singleton dimension at the front to get the same effect 
-    if len(data.shape) == 4: 
-        data = np.moveaxis(data, 3, 0)
-    else: 
-        data = data.reshape(1, *data.shape)
+    data = _reshape_for_iterate(data)
 
     # Affine transformation requires mapping from reference voxels
     # to source voxels (the inverse of how transforms are given)
@@ -105,3 +115,20 @@ def _clip_array(array, ref):
     array[array < min_max[0]] = min_max[0]
     array[array > min_max[1]] = min_max[1]
     return array 
+
+def applywarp_helper(fcoeffs, pre, post, data, src, ref):
+
+    assert pre.shape[-1] == 4
+    assert post.shape[-1] == 4
+
+    with tempfile.TemporaryDirectory() as d: 
+        warp = op.join(d, 'warp.nii.gz')
+        nibabel.save(fcoeffs.coefficients, warp)
+        outpath = op.join(d, 'warped.nii.gz')
+        refvol = op.join(d, 'ref.nii.gz')
+        indata = src.make_nifti(data)
+        ref.touch(refvol)
+        out = applywarp(indata, refvol, outpath, premat=pre, 
+                warp=warp, postmat=post)
+        out = nibabel.load(outpath)
+        return out.get_data()

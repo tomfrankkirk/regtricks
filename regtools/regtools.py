@@ -265,7 +265,7 @@ class Registration(Transform):
 
         # Check for type promotion 
         if isinstance(other, (MotionCorrection, NonLinearRegistration)):
-            return other.__rmatmul__(self, other)
+            return other.__rmatmul__(self)
 
         overall_world = self.src2ref_world @ other.src2ref_world
         return Registration(overall_world, other.src_spc, self.ref_spc,
@@ -577,26 +577,6 @@ class NonLinearRegistration(Transform):
             assert type(self.postmat) is list
             return [ t.to_fsl(src, ref) for t in self.postmat ]
 
-
-    # def apply_to_array(self, src, ref, data, **kwargs):
-    #     premat = self.premat_to_fsl(src, self.fcoeffs.src_spc)
-    #     postmat = self.postmat_to_fsl(self.fcoeffs.ref_spc, ref)
-    #     assert len(self) == data.shape[-1]
-    #     out = apply.applywarp_helper(self.fcoeffs, premat, postmat, 
-    #                     data, src, ref).dataobj
-
-
-    # def apply_to_image(self, src, ref, **kwargs):
-    #     if type(src) is str: 
-    #         src = ImageSpace(src)
-    #     if type(ref) is str: 
-    #         ref = ImageSpace(ref)
-
-    #     data = nibabel.load(src).get_data()
-    #     out = apply_to_array(src, ref, data, **kwargs)
-    #     return ref.make_nifti(out)
-
-
     def __repr__(self):
         text = f"""\
                 NonLinearRegistration with properties:
@@ -672,7 +652,7 @@ class NonLinearRegistration(Transform):
                     self.src_spc, other.ref_spc, self.premat, post)
               
         elif type(other) is MotionCorrection: 
-            postmats = [ m @ self.postmat for m in other.src2ref ]
+            postmats = [ m @ self.postmat for m in other.transforms ]
             premats = [ Registration.identity() ] * len(postmats)
             return NonLinearMotionCorrection(self.fcoeffs, self.src_spc, 
                                              other.ref_spc, premats, postmats)
@@ -719,6 +699,9 @@ class NonLinearMotionCorrection(NonLinearRegistration):
     def __len__(self):
         return len(self.premat)
 
+    def _cast_to_nonlinear_registration(self):
+        return NonLinearRegistration(self.fcoeffs.coefficients, self.src_spc, self.ref_spc)
+
     def __repr__(self):
         text = f"""\
                 NonLinearMotionCorrection with properties:
@@ -729,27 +712,25 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         return dedent(text)
 
     def __matmul__(self, other):
-        raise NotImplementedError("Don't do this")
+
+        raise NotImplementedError()
+        # Extract the warps, combine them 
+        # Deal with the pre and post mats 
+        singular = self._cast_to_nonlinear_registration()
+        warp = singular @ other 
+        premat = [ m @ other.premat for m in self.premat ]
+        return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, premat, self.postmat)
 
     def __rmatmul__(self, other):
-        raise NotImplementedError("Don't do this")
 
-    # def apply_to_array(self, src, ref, data, **kwargs):
-    #     premats = np.concatenate(self.premat_to_fsl(src, self.fcoeffs.src_spc), 0)
-    #     postmats = np.concatenate(self.postmat_to_fsl(self.fcoeffs.ref_spc, ref), 0)
-    #     assert len(self) == data.shape[-1]
-    #     out = apply.applywarp_helper(self.fcoeffs, premats, postmats, 
-    #                     data, src, ref).dataobj
+        raise NotImplementedError()
+        # Extract the warps, combine them 
+        # Deal with the pre and post mats 
+        singular = self._cast_to_nonlinear_registration()
+        warp = other @ singular 
+        postmat = [ warp.postmat @ m for m in self.postmat ]
+        return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, self.premat, postmat)
 
-    # def apply_to_image(self, src, ref, **kwargs):
-    #     if type(src) is str: 
-    #         src = ImageSpace(src)
-    #     if type(ref) is str: 
-    #         ref = ImageSpace(ref)
-
-    #     data = nibabel.load(src).get_data()
-    #     out = apply_to_array(src, ref, data, **kwargs)
-    #     return ref.make_nifti(out)
 
 
 class FNIRTCoefficients(object):
