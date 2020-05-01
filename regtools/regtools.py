@@ -230,7 +230,7 @@ class Registration(Transform):
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
             text = (f"""\
-                Registration with properties:
+                Registration (linear) with properties:
                 source:        {s}, 
                 reference:     {r}, 
                 src2ref_world: {self.src2ref_world[0,:]}
@@ -400,7 +400,7 @@ class MotionCorrection(Registration):
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
             text = (f"""\
-                MotionCorrection with properties:
+                MotionCorrection (linear) with properties:
                 source:          {s}, 
                 reference:       {r}, 
                 series length:   {len(self)}
@@ -578,13 +578,10 @@ class NonLinearRegistration(Transform):
             return [ t.to_fsl(src, ref) for t in self.postmat ]
 
     def __repr__(self):
-        text = f"""\
-                NonLinearRegistration with properties:
-                source:          {self.src_spc}, 
-                reference:       {self.ref_spc}, 
-                """
+        text = (f"""\
+        NonLinearRegistration with properties:
+        """)
         return dedent(text)
-
 
     def __matmul__(self, other):
         """
@@ -713,23 +710,27 @@ class NonLinearMotionCorrection(NonLinearRegistration):
 
     def __matmul__(self, other):
 
-        raise NotImplementedError()
+        # TODO: we can handle Registrations here 
+
+        raise NotImplementedError("Cannot be interpreted")
         # Extract the warps, combine them 
         # Deal with the pre and post mats 
-        singular = self._cast_to_nonlinear_registration()
-        warp = singular @ other 
-        premat = [ m @ other.premat for m in self.premat ]
-        return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, premat, self.postmat)
+        # singular = self._cast_to_nonlinear_registration()
+        # warp = singular @ other 
+        # premat = [ m @ other.premat for m in self.premat ]
+        # return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, premat, self.postmat)
 
     def __rmatmul__(self, other):
 
-        raise NotImplementedError()
+        # TODO: we can handle Registrations here 
+
+        raise NotImplementedError("Cannot be interpreted")
         # Extract the warps, combine them 
         # Deal with the pre and post mats 
-        singular = self._cast_to_nonlinear_registration()
-        warp = other @ singular 
-        postmat = [ warp.postmat @ m for m in self.postmat ]
-        return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, self.premat, postmat)
+        # singular = self._cast_to_nonlinear_registration()
+        # warp = other @ singular 
+        # postmat = [ warp.postmat @ m for m in self.postmat ]
+        # return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, self.premat, postmat)
 
 
 
@@ -777,9 +778,32 @@ def chain(*args):
     if (len(args) == 1):
         chained = args
     else: 
+
+        # As we cannot multiply two NLMCs together, if we find two adjacent
+        # NLRs in sequence then multiply them together first (in anticpation
+        # that they may later be promoted to MCs by other items in the chain.
+        # The below block picks out adjacent NLs, handles them, and inserts
+        # the result back into the appropriate spot 
+        args = list(args)
+        while True: 
+            did_update = False 
+            for idx in range(len(args)-2):
+                if ((type(args[idx]) is NonLinearRegistration) 
+                    and (type(args[idx+1]) is NonLinearRegistration)):
+                    combined = chain(args[idx], args[idx+1])
+                    # combined = Registration.identity()
+                    args = args[:idx] + [combined] + args[idx+2:] 
+                    did_update = True 
+                    break 
+            if not did_update: 
+                break 
+
         if not all([isinstance(r, Transform) for r in args ]):
             raise RuntimeError("Each item in sequence must be a",
                                " Registration, MotionCorrection or NonLinearRegistration")
+                               
+        # We do the first pair explicitly (in case there are only two)
+        # and then we do all others via pre-multiplication 
         chained = args[1] @ args[0]
         for r in args[2:]:
             chained = r @ chained 
