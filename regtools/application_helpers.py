@@ -2,6 +2,7 @@ import functools
 import multiprocessing as mp 
 import tempfile 
 import os.path as op 
+import subprocess
 
 import nibabel
 from nibabel import Nifti1Image, MGHImage
@@ -108,7 +109,6 @@ def _affine_transform(matrix, points):
         t = t.T
     return t[:3,:]
 
-
 def _clip_array(array, ref):
     """Clip array values to min/max of that contained in ref"""
     min_max = (ref.min(), ref.max())
@@ -116,19 +116,36 @@ def _clip_array(array, ref):
     array[array > min_max[1]] = min_max[1]
     return array 
 
-def applywarp_helper(fcoeffs, pre, post, data, src, ref):
+def applywarp_helper(fcoeffs, pre, post, data, src, ref, 
+                     intensity_correct=False):
 
     assert pre.shape[-1] == 4
     assert post.shape[-1] == 4
 
     with tempfile.TemporaryDirectory() as d: 
-        warp = op.join(d, 'warp.nii.gz')
-        nibabel.save(fcoeffs.coefficients, warp)
+
+        # We need to dump lots of stuff to files... 
+        coeffs = op.join(d, 'coeffs.nii.gz')
+        field = op.join(d, 'field.nii.gz')
         outpath = op.join(d, 'warped.nii.gz')
         refvol = op.join(d, 'ref.nii.gz')
-        indata = src.make_nifti(data)
+        jac = op.join(d, 'jac.nii.gz')
+        nibabel.save(fcoeffs.coefficients, coeffs)
         ref.touch(refvol)
+
+        # Create displacement field and jacobian for intensity correction 
+        cmd = f'fnirtfileutils -i {coeffs} -r {refvol} -o {field} -j {jac} -a'
+        subprocess.run(cmd, shell=True)
+
+        # Run applywap with the displacement field 
+        indata = src.make_nifti(data)
         out = applywarp(indata, refvol, outpath, premat=pre, 
-                warp=warp, postmat=post)
-        out = nibabel.load(outpath)
-        return out.get_data()
+                warp=field, postmat=post)
+        out = nibabel.load(outpath).get_data()
+
+        if intensity_correct: 
+            # FIXME: what do we do with jacobian here?
+            scale = nibabel.load(jac).get_data()
+            out /= scale 
+
+        return out
