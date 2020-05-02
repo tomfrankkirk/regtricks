@@ -94,17 +94,17 @@ class Transform(object):
             an Image object of same type as passed in, or Nifti by default
         """
 
-        data, create = apply.src_load_helper(src)
+        data, creator = apply.src_load_helper(src)
         resamp = self.apply_to_array(data, src, ref, cores, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         
-        if create is MGHImage:
+        if creator is MGHImage:
             ret = MGHImage(resamp, ref.vox2world, ref.header)
             return ret 
         else: 
             ret = Nifti2Image(resamp, ref.vox2world, ref.header)
-            if create is FSLImage:
+            if creator is FSLImage:
                 return FSLImage(ret)
             else: 
                 return ret 
@@ -517,11 +517,20 @@ class MotionCorrection(Registration):
 
 
 class NonLinearRegistration(Transform):
-    """Non linear registration transformation"""
+    """
+    Non linear registration transformation. Currently only FSL FNIRT warps
+    are supported. 
+    
+    Args: 
+        coefficients: path to FNIRT warp coefficient field 
+        src: source (path, ImageSpace) used for generating FNIRT coefficients
+        ref: reference (path, ImageSpace) used for generating FNIRT coefficients 
+        premat: affine registration to apply prior to warp (note, the --aff 
+            used when running FNIRT does not need to be supplied)
+        postmat: affine to apply after warp 
+    """
 
     def __init__(self, coefficients, src, ref, premat=np.eye(4), postmat=np.eye(4)):
-
-        self.fcoeffs = FNIRTCoefficients(coefficients, src, ref)
 
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
@@ -531,11 +540,14 @@ class NonLinearRegistration(Transform):
             src = ImageSpace(src)
         self.src_spc = src 
 
+        self.fcoeffs = FNIRTCoefficients(coefficients, src, ref)
         self.premat = Registration(np.eye(4), src, ref, "world")
         self.postmat = Registration(np.eye(4), src, ref, "world")
 
     @classmethod
     def _manual_construct(cls, fcoeffs, src, ref, premat, postmat):
+        """Manual constructor, to be used from __matmul__ and __rmatmul__"""
+        
         x = cls.__new__(cls)
         x.fcoeffs = fcoeffs
         x.src_spc = src 
@@ -548,6 +560,7 @@ class NonLinearRegistration(Transform):
 
     def inverse(self):
         """Iverse warpfield, via FSL invwarp"""
+
         with tempfile.TemporaryDirectory() as d:
             oldcoeffs = op.join(d, 'oldcoeffs.nii.gz')
             newcoeffs = op.join(d, 'newcoeffs.nii.gz')
@@ -564,6 +577,8 @@ class NonLinearRegistration(Transform):
         return inv 
 
     def premat_to_fsl(self, src, ref): 
+        """Return list of premats in FSL convention""" 
+
         if type(self.premat) is Registration: 
             return self.premat.to_fsl(src, ref)
         else: 
@@ -571,6 +586,8 @@ class NonLinearRegistration(Transform):
             return [ t.to_fsl(src, ref) for t in self.premat ]
 
     def postmat_to_fsl(self, src, ref): 
+        """Return list of postmats in FSL convention""" 
+
         if type(self.postmat) is Registration: 
             return self.postmat.to_fsl(src, ref)
         else: 
@@ -601,10 +618,8 @@ class NonLinearRegistration(Transform):
                                              self.ref_spc, premats, postmats)
 
         elif type(other) is NonLinearRegistration: 
-
-            # pre of other, then warp field, then post of other, pre of self
+            # Pre of other, warp of other, (pre of self @ post of other), 
             # warp of self, post of self. Done! 
-
             pre = other.premat.to_fsl(other.premat.src_spc, other.fcoeffs.src_spc)
             mid = (self.premat @ other.postmat).to_fsl(other.fcoeffs.ref_spc, self.fcoeffs.src_spc)
             post = self.postmat.to_fsl(self.fcoeffs.ref_spc, self.postmat.ref_spc)
@@ -634,7 +649,8 @@ class NonLinearRegistration(Transform):
             return NonLinearRegistration(new, other.src_spc, self.ref_spc)
 
         else: 
-            raise NotImplementedError()
+            raise NotImplementedError("Cannot interpret multiplication of "
+                f"{type(self)} with {type(other)}")
 
     def __rmatmul__(self, other):
         """
@@ -658,7 +674,8 @@ class NonLinearRegistration(Transform):
             raise RuntimeError("This should be handled by the other")
 
         else: 
-            raise NotImplementedError()
+            raise NotImplementedError("Cannot interpret multiplication of "
+                f"{type(other)} with {type(self)}")
 
 
 class NonLinearMotionCorrection(NonLinearRegistration):
@@ -669,11 +686,11 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         fcoeffs: FNIRT coefficients object 
         src: src of transform
         ref: ref of transform
-        premats: list of Registration objects
-        postmats: list of Registration objects
+        premat: list of Registration objects
+        postmat: list of Registration objects
     """
 
-    def __init__(self, fcoeffs, src, ref, premats, postmats):
+    def __init__(self, fcoeffs, src, ref, premat, postmat):
         
         self.fcoeffs = fcoeffs
 
@@ -685,19 +702,20 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             src = ImageSpace(src)
         self.src_spc = src 
 
-        assert (type(premats) is list) or (type(postmats) is list)
-        if not premats: 
-            premats = len(postmats) * [np.eye(4)]
-        elif not premats: 
-            postmats = len(premats) * [np.eye(4)]
-        self.premat = premats 
-        self.postmat = postmats 
+        assert (type(premat) is list) or (type(postmat) is list)
+        if not premat: 
+            premat = len(postmat) * [ Registration.identity() ]
+        elif not premat: 
+            postmat = len(premat) * [ Registration.identity() ]
+        self.premat = premat 
+        self.postmat = postmat 
 
     def __len__(self):
         return len(self.premat)
 
     def _cast_to_nonlinear_registration(self):
-        return NonLinearRegistration(self.fcoeffs.coefficients, self.src_spc, self.ref_spc)
+        return NonLinearRegistration(self.fcoeffs.coefficients, 
+                                     self.src_spc, self.ref_spc)
 
     def __repr__(self):
         text = f"""\
@@ -710,28 +728,25 @@ class NonLinearMotionCorrection(NonLinearRegistration):
 
     def __matmul__(self, other):
 
-        # TODO: we can handle Registrations here 
+        if type(other) is Registration:
+            pre = [ m @ other for m in self.premat ]
+            return NonLinearMotionCorrection(self.fcoeffs, other.src_spc, 
+                                             self.ref_spc, pre, self.postmat)
 
-        raise NotImplementedError("Cannot be interpreted")
-        # Extract the warps, combine them 
-        # Deal with the pre and post mats 
-        # singular = self._cast_to_nonlinear_registration()
-        # warp = singular @ other 
-        # premat = [ m @ other.premat for m in self.premat ]
-        # return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, premat, self.postmat)
+        else: 
+            raise NotImplementedError("Cannot interpret multiplication of "
+                f"{type(self)} with {type(other)}")
 
     def __rmatmul__(self, other):
 
-        # TODO: we can handle Registrations here 
+        if type(other) is Registration:
+            post = [ other @ m for m in self.postmat ]
+            return NonLinearMotionCorrection(self.fcoeffs, self.src_spc, 
+                                             other.ref_spc, self.premat, post)
 
-        raise NotImplementedError("Cannot be interpreted")
-        # Extract the warps, combine them 
-        # Deal with the pre and post mats 
-        # singular = self._cast_to_nonlinear_registration()
-        # warp = other @ singular 
-        # postmat = [ warp.postmat @ m for m in self.postmat ]
-        # return NonLinearMotionCorrection(warp.fcoeffs, warp.src_spc, warp.ref_spc, self.premat, postmat)
-
+        else: 
+            raise NotImplementedError("Cannot interpret multiplication of "
+                f"{type(other)} with {type(self)}")
 
 
 class FNIRTCoefficients(object):
@@ -812,10 +827,10 @@ def chain(*args):
 
 
 def cast_potential_array(arr):
+    """Helper to convert 4x4 arrays to Registrations if not already"""
 
-    # Cast 4x4 arrays to Registrations
     if type(arr) is np.ndarray: 
         assert arr.shape == (4,4)
         arr = copy.deepcopy(arr)
         arr = Registration(arr)
-    return arr 
+    return arr
