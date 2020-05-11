@@ -5,9 +5,14 @@ import numpy as np
 import nibabel
 from fsl.wrappers.flirt import flirt as flirt_cmd
 from fsl.wrappers.flirt import mcflirt as mcflirt_cmd
+from fsl.wrappers.fnirt import fnirt as fnirt_cmd 
 from fsl.data.image import Image as FSLImage
 
 from . import Registration, MotionCorrection
+
+# TODO: incorporate FNIRT, remove the output options 
+# just check for omat argument, if not there then pipe it into
+# temp directory and read it out. let normal args pass through 
 
 def flirt(src, ref, **kwargs):
     """
@@ -95,3 +100,6 @@ def mcflirt(src, refvol=-1, **kwargs):
             mc = MotionCorrection(matsdir, src, src, "fsl")
 
         return (mc, refimg)
+
+def fnirt():
+    pass
