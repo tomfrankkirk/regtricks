@@ -3,6 +3,8 @@ import multiprocessing as mp
 import tempfile 
 import os.path as op 
 import subprocess
+import os 
+import shutil 
 
 import nibabel
 from nibabel import Nifti1Image, MGHImage
@@ -11,6 +13,7 @@ from fsl.wrappers import applywarp
 import numpy as np 
 from scipy.ndimage import map_coordinates
 
+from .image_space import ImageSpace
 
 def src_load_helper(src):
     if isinstance(src, str):
@@ -38,7 +41,7 @@ def _reshape_after_iterate(data):
 
 
 
-def _application_worker(data, transform, src_spc, ref_spc, cores, **kwargs):
+def linear(data, transform, src_spc, ref_spc, cores, **kwargs):
     """
     Worker function for Registration and MotionCorrection apply_to_image()
 
@@ -81,7 +84,7 @@ def _application_worker(data, transform, src_spc, ref_spc, cores, **kwargs):
     # Stack all the individual volumes back up in time dimension 
     # Clip the array to the original min/max values 
     resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
-    return _clip_array(np.squeeze(resamp), data) 
+    return np.clip(np.squeeze(resamp), data.min(), data.max()) 
 
 
 def vol_coord_generator(data, mats, src, ref):
@@ -106,46 +109,82 @@ def _affine_transform(matrix, points):
     p[:3,:] = points 
     t = matrix @ p 
     if transpose: 
-        t = t.T
+        return t[:3,:].T
     return t[:3,:]
 
-def _clip_array(array, ref):
-    """Clip array values to min/max of that contained in ref"""
-    min_max = (ref.min(), ref.max())
-    array[array < min_max[0]] = min_max[0]
-    array[array > min_max[1]] = min_max[1]
-    return array 
 
-def applywarp_helper(fcoeffs, pre, post, data, src, ref, 
-                     intensity_correct=False):
+def nonlinear(data, src, ref, fcoeffs, pre, post,
+                     intensity_correct=False, cores=1):
 
-    assert pre.shape[-1] == 4
-    assert post.shape[-1] == 4
+    if type(pre) is list: 
+        assert len(data.shape) == 4 
+        premat = np.concatenate([ 
+            m.to_fsl(src, fcoeffs.src_spc) for m in pre ], axis=0)
+    else: 
+        premat = pre.to_fsl(src, fcoeffs.src_spc) 
+
+    if type(post) is list: 
+        assert len(data.shape) == 4 
+        postmat = np.concatenate([ 
+            m.to_fsl(fcoeffs.ref_spc, ref) for m in post ], axis=0)
+    else: 
+        postmat = post.to_fsl(fcoeffs.ref_spc, ref)
 
     with tempfile.TemporaryDirectory() as d: 
 
         # We need to dump lots of stuff to files... 
-        coeffs = op.join(d, 'coeffs.nii.gz')
-        field = op.join(d, 'field.nii.gz')
+        cpath = op.join(d, 'coeffs.nii.gz')
+        refpath = op.join(d, 'ref.nii.gz')
+        srcpath = op.join(d, 'src.nii.gz')
+        nibabel.save(fcoeffs.coefficients, cpath)
+        ref.touch(refpath)
+        src.touch(srcpath)
+
+        if len(data.shape) == 4 and (cores > 1): 
+            worker_args = []
+            for worker in range(cores): 
+                start = (worker * data.shape[3] // cores)
+                stop = min([((worker+1) * data.shape[3] // cores), data.shape[3]+1])
+                if premat.shape[0] > 4: 
+                    premat_slice = premat[4*start : 4*stop,:]
+                else: 
+                    premat_slice = premat
+                if postmat.shape[0] > 4: 
+                    postmat_slice = postmat[4*start : 4*stop,:]
+                else: 
+                    postmat_slice = postmat
+
+                worker_args.append([data[...,start:stop], srcpath, refpath, cpath, premat_slice, postmat_slice])
+
+            assert stop == data.shape[3], 'Did not assign all data to workers'
+            with mp.Pool(cores) as p: 
+                chunks = p.starmap(applywarp_worker, worker_args)
+
+            return np.concatenate(chunks, axis=3)
+
+        else: 
+            return applywarp_worker(data, srcpath, refpath, cpath, premat, postmat)
+
+
+def applywarp_worker(data, srcpath, refpath, coeffpath, premat, postmat):
+
+    if len(data.shape) == 4:
+        assert (premat.shape[0] == 4 * data.shape[3]) or (premat.shape[0] == 4)
+        assert (postmat.shape[0] == 4 * data.shape[3]) or (postmat.shape[0] == 4)
+    else: 
+        assert premat.shape == (4,4) and postmat.shape == (4,4)
+
+    with tempfile.TemporaryDirectory() as d: 
+
         outpath = op.join(d, 'warped.nii.gz')
-        refvol = op.join(d, 'ref.nii.gz')
-        jac = op.join(d, 'jac.nii.gz')
-        nibabel.save(fcoeffs.coefficients, coeffs)
-        ref.touch(refvol)
-
-        # Create displacement field and jacobian for intensity correction 
-        cmd = f'fnirtfileutils -i {coeffs} -r {refvol} -o {field} -j {jac} -a'
-        subprocess.run(cmd, shell=True)
-
-        # Run applywap with the displacement field 
-        indata = src.make_nifti(data)
-        out = applywarp(indata, refvol, outpath, premat=pre, 
-                warp=field, postmat=post)
+        inpath = op.join(d, 'data.nii.gz')
+        ImageSpace.save_like(srcpath, data, inpath)
+        pre = op.join(d, 'pre.mat')
+        post = op.join(d, 'post.mat')
+        np.savetxt(pre, premat)
+        np.savetxt(post, postmat)
+        applywarp(inpath, refpath, outpath, premat=pre, 
+                warp=coeffpath, postmat=post)
         out = nibabel.load(outpath).get_data()
 
-        if intensity_correct: 
-            # FIXME: what do we do with jacobian here?
-            scale = nibabel.load(jac).get_data()
-            out /= scale 
-
-        return out
+    return out 

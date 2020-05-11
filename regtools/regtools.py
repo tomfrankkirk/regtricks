@@ -17,6 +17,8 @@ from . import x5_interface as x5
 from . import application_helpers as apply 
 
 
+from scipy.ndimage import map_coordinates
+
 class Transform(object):
     """
     Base object for all transformations. This should never actually be 
@@ -139,29 +141,21 @@ class Transform(object):
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
 
-        # Linear transformation: scipy interpolation (quicker)
+        # Linear transformation: scipy interpolation 
         if type(self) in (Registration, MotionCorrection):
-            resamp = apply._application_worker(data, self, src, ref, 
+            resamp = apply.linear(data, self, src, ref, 
                                             cores, **kwargs)
 
         # Nonlinear transformation: applywarp interpolation 
         elif type(self) in (NonLinearRegistration, 
                                NonLinearMotionCorrection):
 
-            if type(self) is NonLinearMotionCorrection:
-                assert len(self) == data.shape[-1]
-                premat = np.concatenate(
-                    self.premat_to_fsl(src, self.fcoeffs.src_spc), 0)
-                postmat = np.concatenate(
-                    self.postmat_to_fsl(self.fcoeffs.ref_spc, ref), 0)
-            else: 
-                premat = self.premat_to_fsl(src, self.fcoeffs.src_spc)
-                postmat = self.postmat_to_fsl(self.fcoeffs.ref_spc, ref)
-
-            resamp = apply.applywarp_helper(self.fcoeffs, premat, postmat, 
-                        data, src, ref)
+            resamp = apply.nonlinear(data, src, ref, self.fcoeffs, 
+                self.premat, self.postmat, False, cores)
 
         return resamp      
+
+
 
 
 class Registration(Transform):
@@ -244,7 +238,7 @@ class Registration(Transform):
         if not spc: 
             return "(none defined)"
         elif spc.file_name: 
-            return self.src_spc.file_name
+            return self.spc.file_name
         else:  
             return "ImageSpace object"
 
@@ -566,9 +560,9 @@ class NonLinearRegistration(Transform):
             newcoeffs = op.join(d, 'newcoeffs.nii.gz')
             old_src = op.join(d, 'src.nii.gz')
             old_ref = op.join(d, 'ref.nii.gz')
-            self.src.touch(old_src)
-            self.ref.touch(old_ref)
-            nibabel.save(self.coefficients, oldcoeffs)
+            self.fcoeffs.src_spc.touch(old_src)
+            self.fcoeffs.ref_spc.touch(old_ref)
+            nibabel.save(self.fcoeffs.coefficients, oldcoeffs)
             cmd = 'invwarp -w {} -o {} -r {}'.format(oldcoeffs, newcoeffs, old_src)
             subprocess.run(cmd, shell=True)
             newcoeffs = nibabel.load(newcoeffs)
@@ -774,6 +768,21 @@ class FNIRTCoefficients(object):
         if not isinstance(src, ImageSpace):
             src = ImageSpace(src)
         self.src_spc = src 
+
+    def resolve_displacements(self, ref): 
+
+        if not isinstance(ref, ImageSpace):
+            ref = ImageSpace(ref)
+
+        with tempfile.TemporaryDirectory() as d: 
+            coeffs = op.join(d, 'coeffs.nii.gz')
+            refvol = op.join(d, 'ref.nii.gz')
+            field = op.join(d, 'field.nii.gz')
+            ref.touch(refvol)
+            nibabel.save(self.coefficients, coeffs)
+            cmd = f'convertwarp -w {coeffs} -r {refvol} -o {field} --absout'
+            subprocess.run(cmd, shell=True)
+            return nibabel.load(field).get_data()
 
 
 def chain(*args):
