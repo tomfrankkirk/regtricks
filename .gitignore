@@ -11,3 +11,5 @@ splines
 spline_tests
 *.tar
 docs
+*.log 
+*.ipynb 
