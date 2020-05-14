@@ -15,6 +15,10 @@ from scipy.ndimage import map_coordinates
 
 from .image_space import ImageSpace
 
+
+# TODO:     intensity correction 
+
+
 def src_load_helper(src):
     if isinstance(src, str):
         src = nibabel.load(src)
@@ -30,32 +34,34 @@ def src_load_helper(src):
     return data, type(src)
 
 
-def _reshape_for_iterate(data):
+def _make_iterable(data):
+    """
+    Ensure array is 4D, with the fourth dimension at the front (ie, T, XYZ).
+    3D volumes will be expanded with a singleton dimension: 1, XYZ
+    Used for iterating over the volumes of a series. 
+    """
     if len(data.shape) == 4: 
         return np.moveaxis(data, 3, 0)
     else: 
         return data.reshape(1, *data.shape)
 
-def _reshape_after_iterate(data):
-    pass
 
-
-
-def linear(data, transform, src_spc, ref_spc, cores, **kwargs):
+def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     """
-    Worker function for Registration and MotionCorrection apply_to_image()
+    Apply a transform to an array of data, mapping from source space 
+    to reference. Essentially this is an extended wrapper for Scipy 
+    map_coordinates. 
 
     Args: 
-        data: np.array of data (3D or 4D)
-        transform: transformation between reference space and source, 
-            in world-world terms
-        src_spc: ImageSpace in which data currently lies
-        ref_spc: ImageSpace towards which data will be transformed
-        cores: number of cores to use (for 4D data)
+        data (array): np.array of data (3D or 4D)
+        transform (Transformation): between source and reference space 
+        src_spc (ImageSpace): in which data currently lies
+        ref_spc (ImageSpace): towards which data will be transformed
+        cores (int): number of cores to use (for 4D data)
         **kwargs: passed onto scipy.ndimage.interpolate.map_coordinates
 
     Returns: 
-        np.array of transformed data 
+        (np.array) transformed data 
     """
 
     if len(data.shape) != 4 and len(data.shape) != 3: 
@@ -64,22 +70,22 @@ def linear(data, transform, src_spc, ref_spc, cores, **kwargs):
     if len(transform) > 1 and (len(transform) != data.shape[-1]): 
         raise RuntimeError("Number of volumes in data does not match transform")
 
-    # Move the 4th dimension to the front, so that we can iterate over each 
-    # volume of the timeseries. If 3D data, pad out the array with a
-    # singleton dimension at the front to get the same effect 
-    data = _reshape_for_iterate(data)
-
-    # Affine transformation requires mapping from reference voxels
-    # to source voxels (the inverse of how transforms are given)
+    # Prepare data for iterating, prepare worker function for each core 
+    # Resolve the transform: this means that for each volume of the series, 
+    # we have a corresponding array of coordinates onto which we need to 
+    # iterpolate the date. Note that this is a backwards transform: we 
+    # map the REFERENCE voxels into the SOURCE space and do the interpolation
+    # there
+    data = _make_iterable(data)
     worker = functools.partial(map_coordinates, **kwargs)
-    vols_coords = vol_coord_generator(data, transform.ref2src_world, 
-                                      src_spc, ref_spc)
+    worker_args = zip(data, transform.resolve(src_spc, ref_spc, data.shape[0]))
 
+    # Distribute amongst workers 
     if cores == 1:  
-        resamp = [ worker(*vc) for vc in vols_coords ] 
+        resamp = [ worker(*vc) for vc in worker_args ] 
     else: 
         with mp.Pool(cores) as p: 
-            resamp = p.starmap(worker, vols_coords)
+            resamp = p.starmap(worker, worker_args)
 
     # Stack all the individual volumes back up in time dimension 
     # Clip the array to the original min/max values 
@@ -87,104 +93,23 @@ def linear(data, transform, src_spc, ref_spc, cores, **kwargs):
     return np.clip(np.squeeze(resamp), data.min(), data.max()) 
 
 
-def vol_coord_generator(data, mats, src, ref):
-
-    if isinstance(mats, np.ndarray): 
-        mats = [mats] * data.shape[0] 
-
-    for vol, mat in zip(data, mats):
-        ref2src_vox = (src.world2vox @ mat @ ref.vox2world)
-        ijk = ref.ijk_grid('ij').reshape(-1, 3).T
-        ijk = _affine_transform(ref2src_vox, ijk)
-        yield vol, ijk 
-
-
-def _affine_transform(matrix, points): 
+def aff_trans(matrix, points): 
     """Affine transform a 3D set of points"""
-    transpose = False 
+
+    if not matrix.shape == (4,4): 
+        raise ValueError("Matrix needs to be a 4x4 array")
+
     if points.shape[1] == 3: 
         transpose = True 
         points = points.T 
+    else: 
+        transpose = False 
+
     p = np.ones((4, points.shape[1]))
     p[:3,:] = points 
     t = matrix @ p 
+
     if transpose: 
         return t[:3,:].T
-    return t[:3,:]
-
-
-def nonlinear(data, src, ref, fcoeffs, pre, post,
-                     intensity_correct=False, cores=1):
-
-    if type(pre) is list: 
-        assert len(data.shape) == 4 
-        premat = np.concatenate([ 
-            m.to_fsl(src, fcoeffs.src_spc) for m in pre ], axis=0)
     else: 
-        premat = pre.to_fsl(src, fcoeffs.src_spc) 
-
-    if type(post) is list: 
-        assert len(data.shape) == 4 
-        postmat = np.concatenate([ 
-            m.to_fsl(fcoeffs.ref_spc, ref) for m in post ], axis=0)
-    else: 
-        postmat = post.to_fsl(fcoeffs.ref_spc, ref)
-
-    with tempfile.TemporaryDirectory() as d: 
-
-        # We need to dump lots of stuff to files... 
-        cpath = op.join(d, 'coeffs.nii.gz')
-        refpath = op.join(d, 'ref.nii.gz')
-        srcpath = op.join(d, 'src.nii.gz')
-        nibabel.save(fcoeffs.coefficients, cpath)
-        ref.touch(refpath)
-        src.touch(srcpath)
-
-        if len(data.shape) == 4 and (cores > 1): 
-            worker_args = []
-            for worker in range(cores): 
-                start = (worker * data.shape[3] // cores)
-                stop = min([((worker+1) * data.shape[3] // cores), data.shape[3]+1])
-                if premat.shape[0] > 4: 
-                    premat_slice = premat[4*start : 4*stop,:]
-                else: 
-                    premat_slice = premat
-                if postmat.shape[0] > 4: 
-                    postmat_slice = postmat[4*start : 4*stop,:]
-                else: 
-                    postmat_slice = postmat
-
-                worker_args.append([data[...,start:stop], srcpath, refpath, cpath, premat_slice, postmat_slice])
-
-            assert stop == data.shape[3], 'Did not assign all data to workers'
-            with mp.Pool(cores) as p: 
-                chunks = p.starmap(applywarp_worker, worker_args)
-
-            return np.concatenate(chunks, axis=3)
-
-        else: 
-            return applywarp_worker(data, srcpath, refpath, cpath, premat, postmat)
-
-
-def applywarp_worker(data, srcpath, refpath, coeffpath, premat, postmat):
-
-    if len(data.shape) == 4:
-        assert (premat.shape[0] == 4 * data.shape[3]) or (premat.shape[0] == 4)
-        assert (postmat.shape[0] == 4 * data.shape[3]) or (postmat.shape[0] == 4)
-    else: 
-        assert premat.shape == (4,4) and postmat.shape == (4,4)
-
-    with tempfile.TemporaryDirectory() as d: 
-
-        outpath = op.join(d, 'warped.nii.gz')
-        inpath = op.join(d, 'data.nii.gz')
-        ImageSpace.save_like(srcpath, data, inpath)
-        pre = op.join(d, 'pre.mat')
-        post = op.join(d, 'post.mat')
-        np.savetxt(pre, premat)
-        np.savetxt(post, postmat)
-        applywarp(inpath, refpath, outpath, premat=pre, 
-                warp=coeffpath, postmat=post)
-        out = nibabel.load(outpath).get_data()
-
-    return out 
+        return t[:3,:]
