@@ -1,10 +1,15 @@
 *.nii.gz
 __pycache__
 *.mat
-*.txt 
 .vscode
 mcf_mats
 .DS_Store 
 *.x5 
 scratch.py
 testdata 
+splines
+spline_tests
+*.tar
+docs
+*.log 
+*.ipynb 

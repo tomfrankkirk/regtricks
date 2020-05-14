@@ -1,13 +1,19 @@
 import tempfile
 import os.path as op 
+import shutil
 
 import numpy as np
 import nibabel
 from fsl.wrappers.flirt import flirt as flirt_cmd
 from fsl.wrappers.flirt import mcflirt as mcflirt_cmd
+from fsl.wrappers.fnirt import fnirt as fnirt_cmd 
 from fsl.data.image import Image as FSLImage
 
-from . import Registration, MotionCorrection
+from . import Registration, MotionCorrection, NonLinearRegistration
+
+# TODO: incorporate FNIRT, remove the output options 
+# just check for omat argument, if not there then pipe it into
+# temp directory and read it out. let normal args pass through 
 
 def flirt(src, ref, **kwargs):
     """
@@ -25,22 +31,15 @@ def flirt(src, ref, **kwargs):
         **kwargs: as for FLIRT 
     
     Returns: 
-        Registration object, if no output options specified. 
+        Registration object
     """
 
-    # If out or omat are given, run as usual
-    if any(['out' in kwargs, 'o' in kwargs, 'omat' in kwargs]):
+    with tempfile.TemporaryDirectory() as d: 
+        if 'omat' not in kwargs: 
+            kwargs['omat'] = op.join(d, 'omat.mat')
         flirt_cmd(src, ref, **kwargs)
-        return 
 
-    # If out or omat not given, run within tempdir so we can return result
-    else: 
-        with tempfile.TemporaryDirectory() as d: 
-            mat = op.join(d, 'omat.mat')
-            flirt_cmd(src, ref, omat=mat, **kwargs)
-            mat = np.loadtxt(mat)
-
-        return Registration(mat, src, ref, "fsl")
+        return Registration(kwargs['omat'], src, ref, "fsl")
 
 
 def mcflirt(src, refvol=-1, **kwargs):
@@ -58,13 +57,12 @@ def mcflirt(src, refvol=-1, **kwargs):
         **kwargs: as for MCFLIRT
     
     Returns: 
-        tuple of MotionCorrection object, and a Nibabel image of the frame
-            used as reference, if no output path given 
+        MotionCorrection object
     """
 
     if isinstance(src, str):
+        src_path = src 
         src = nibabel.load(src)
-
 
     if (refvol == -1) and (refvol not in kwargs):
         refvol = src.shape[-1] // 2
@@ -72,26 +70,38 @@ def mcflirt(src, refvol=-1, **kwargs):
     else: 
         kwargs['refvol'] = refvol
 
-    # If out or omat are given, run as usual
-    if any(['out' in kwargs, 'o' in kwargs, 'omat' in kwargs]):        
-        mcflirt_cmd(src, **kwargs)
-        return 
-
+    # Do we have a name to save output at?
+    if kwargs.get('out'): 
+        matsname = kwargs.get('out') + '.mat'
+    elif kwargs.get('o'):
+        matsname = kwargs.get('o') + '.mat'
     else: 
-        if isinstance(src, FSLImage):
-            data = src.data
-            v2w = src.voxToWorldMat
-        else: 
-            data = src.get_fdata()
-            v2w = src.affine
+        out = src_path 
+        if out.count('nii'): 
+            out = out[:out.index('.nii')]
+        matsname = out + '_mcf.mat'
 
-        refimg = nibabel.Nifti1Image(data[..., kwargs['refvol']], 
-                                     v2w, src.header)
+    with tempfile.TemporaryDirectory() as d: 
 
-        with tempfile.TemporaryDirectory() as d: 
-            img = op.join(d, 'img.nii.gz')
-            matsdir = op.join(d, 'img.nii.gz.mat')
-            mcflirt_cmd(src, out=img, mats=True, **kwargs)
-            mc = MotionCorrection(matsdir, src, src, "fsl")
+        save_mats = ('mats' in kwargs)
+        kwargs['mats'] = True 
+        mcflirt_cmd(src, **kwargs)
+        mc = MotionCorrection(matsname, src, src, "fsl")
+        if not save_mats: 
+            shutil.rmtree(matsname)
 
-        return (mc, refimg)
+    return mc 
+
+def fnirt(src, ref, **kwargs):
+    
+    # # TODO: there must be a better way of doing this one day 
+    print("WARNING (FNIRT): only outputs with a specified name will be "
+            "saved (no defaults).")
+
+    with tempfile.TemporaryDirectory() as d: 
+        if not 'cout' in kwargs: 
+            kwargs['cout'] = op.join(d, 'coeffs.nii.gz')
+        fnirt_cmd(src, ref=ref, **kwargs)
+        coeffs = nibabel.load(kwargs['cout'])
+        coeffs.get_data()
+        return NonLinearRegistration(coeffs, src, ref)

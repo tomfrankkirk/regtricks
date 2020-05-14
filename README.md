@@ -8,9 +8,9 @@ struct2asl = Registration('struct2asl.mat', 't1.nii.gz', 'asl.nii.gz')
 asl_moco = MotionCorrection('mcflirt_dir', 'asl.nii.gz')
 
 # Combine them into a single operation and apply to the timeseries
-# The result will be saved as 'asl_t1_mc.nii.gz'
+# The result will be a nibabel Nifti object
 asl2struct_moco = chain(struct2asl.inverse(), asl_moco)
-asl2struct_moco.apply('asl.nii.gz', 't1.nii.gz', 'asl_t1_mc.nii.gz')
+final = asl2struct_moco.apply_to_image('asl.nii.gz', 't1.nii.gz')
 ```
 
 ## Contents
@@ -32,13 +32,17 @@ python -m pip install .
 ```
 
 ## Overview
-The following three classes are provided: 
+The following fundamental classes are provided:   
 
-`Registration`: a 4x4 affine transformation, that optionally can be associated with a specific source and reference image. Internally, all registrations are stored in world-world terms, and all interactions between registrations are also in world-world terms. 
+`Registration`: a 4x4 affine transformation
 
 `MotionCorrection`: a sequence of `Registration` objects, one for each volume of a timeseries. 
 
-`ImageSpace`: the voxel grid of an image, including the dimensions, voxel size and orientation (almost everything except the image itself). This class also allows easy manipulation of the grid (shifting, cropping, resizing voxels, etc)
+`NonLinearRegistration`: a non-linear deformation (currently only FSL FNIRT supported)
+
+`ImageSpace`: the voxel grid of an image, including the dimensions, voxel size and orientation (almost everything except the image itself). This class allows for easy manipulation of the grid (shifting, cropping, resizing voxels, etc)
+
+Internally, all transformations are stored in world-world terms and are converted into the appropriate form when they need to be applied. You can also explicitly request conversion (eg, `Registration.to_fsl()`)
 
 ## Loading, converting and saving <a name="loading"></a>
 `Registration` objects can be initialised from a text file or `np.array`. If the registration was produced by FLIRT, paths to the source and reference images are required to convert the transformation into world-world terms. 

@@ -2,5 +2,6 @@
 # from .image_space import ImageSpace
 
 from .image_space import ImageSpace
-from .regtools import Registration, MotionCorrection, chain, load
-from .wrappers import flirt, mcflirt
+from .regtools import Registration, MotionCorrection, NonLinearRegistration, chain
+from .wrappers import flirt, mcflirt, fnirt
+from .x5_interface import load_manager as load
