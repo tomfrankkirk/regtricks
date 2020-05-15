@@ -81,17 +81,12 @@ def get_version():
 
 
 setup(name=PACKAGE_NAME,
-      version=get_version(),
+      version='0.1.2',
       description="Tools for manipulating and applying registrations",
       long_description=get_filetext('README.md'),
       long_description_content_type='text/markdown',
       author='Tom Kirk',
       author_email='thomas.kirk@eng.ox.ac.uk',
       python_requires='>3.6',
-      install_requires=[
-          'numpy', 
-          'nibabel', 
-          'fslpy', 
-          'scipy'
-          ],
+      install_requires=['numpy', 'nibabel', 'fslpy', 'scipy'],
       packages=find_packages())
