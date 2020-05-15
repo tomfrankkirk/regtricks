@@ -87,5 +87,11 @@ setup(name=PACKAGE_NAME,
       long_description_content_type='text/markdown',
       author='Tom Kirk',
       author_email='thomas.kirk@eng.ox.ac.uk',
-      install_requires=['numpy', 'nibabel', 'fslpy', 'scipy'],
+      python_requires='>3.6',
+      install_requires=[
+          'numpy', 
+          'nibabel', 
+          'fslpy', 
+          'scipy'
+          ],
       packages=find_packages())
