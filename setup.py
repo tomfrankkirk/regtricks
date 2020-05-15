@@ -53,6 +53,7 @@ def update_metadata(version_str, timestamp_str):
 def get_requirements():
     """ Get a list of all entries in the requirements file """
     with io.open(os.path.join(ROOTDIR, 'requirements.txt'), encoding='utf-8') as f:
+        # print([l.strip() for l in f.readlines()])
         return [l.strip() for l in f.readlines()]
 
 
@@ -86,6 +87,5 @@ setup(name=PACKAGE_NAME,
       long_description_content_type='text/markdown',
       author='Tom Kirk',
       author_email='thomas.kirk@eng.ox.ac.uk',
-      setup_requires=['numpy'],
-      install_requires=get_requirements(),
+      install_requires=['numpy', 'nibabel', 'fslpy', 'scipy'],
       packages=find_packages())
