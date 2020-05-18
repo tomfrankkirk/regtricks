@@ -2,7 +2,7 @@ import numpy as np
 from collections import defaultdict
 
 def get_highest_type(first, second):
-    from .regtools import (Registration, MotionCorrection,
+    from .regtricks import (Registration, MotionCorrection,
             NonLinearMotionCorrection, NonLinearRegistration)
 
     _TYPE_MAP = defaultdict(int)
@@ -22,7 +22,7 @@ def get_highest_type(first, second):
     
 
 def registration(lhs, rhs):
-    from .regtools import Registration
+    from .regtricks import Registration
 
     # lhs   rhs 
     # reg @ reg 
@@ -36,7 +36,7 @@ def registration(lhs, rhs):
 
 
 def moco(lhs, rhs):
-    from .regtools import MotionCorrection, Registration
+    from .regtricks import MotionCorrection, Registration
 
     # lhs   rhs 
     # reg @ MC
@@ -60,7 +60,7 @@ def moco(lhs, rhs):
     return MotionCorrection(overall, rhs.src_spc, lhs.ref_spc, "world")
 
 def nonlinearreg(lhs, rhs):
-    from .regtools import NonLinearRegistration, NonLinearProduct
+    from .regtricks import NonLinearRegistration, NonLinearProduct
 
     # lhs    rhs 
     # NLR @ other
@@ -92,7 +92,7 @@ def nonlinearreg(lhs, rhs):
         
 
 def nonlinearmoco(lhs, rhs):
-    from .regtools import (NonLinearRegistration, NonLinearProduct, 
+    from .regtricks import (NonLinearRegistration, NonLinearProduct, 
                            Registration, NonLinearMotionCorrection)
 
     # lhs    rhs 

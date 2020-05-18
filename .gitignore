@@ -16,4 +16,4 @@ docs
 build*
 dist*
 *.egg*
-regtools/_version.py
+regtricks/_version.py

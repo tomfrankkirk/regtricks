@@ -1,4 +1,4 @@
-# Regtools
+# Regtricks
 Tools for manipulating, combining and applying image transformations.  
 
 ```python
@@ -26,8 +26,8 @@ final = asl2struct_moco.apply_to_image('asl.nii.gz', 't1.nii.gz')
 
 Installation into the current python environment: 
 ```bash
-git clone https://github.com/tomfrankkirk/regtools
-cd regtools
+git clone https://github.com/tomfrankkirk/regtricks
+cd regtricks
 python -m pip install . 
 ```
 

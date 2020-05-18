@@ -5,7 +5,7 @@ import subprocess
 import re 
 import io 
 
-PACKAGE_NAME = 'regtools'
+PACKAGE_NAME = 'regtricks'
 ROOTDIR = os.path.abspath(os.path.dirname(__file__))
 
 

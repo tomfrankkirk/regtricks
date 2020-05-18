@@ -1,5 +1,5 @@
 """
-X5 interface for regtools. With thanks to Paul McCarthy; this is almost a
+X5 interface for regtricks. With thanks to Paul McCarthy; this is almost a
 direct copy of his fslpy.transform.x5 module
 """
 
@@ -23,7 +23,7 @@ def save_manager(reg, path):
     Save Registration or MotionCorrection objects in X5 format
     """
 
-    from regtools import MotionCorrection, Registration
+    from regtricks import MotionCorrection, Registration
 
     ext = op.splitext(path)[1]
     if ext != '.x5':
@@ -56,7 +56,7 @@ def load_manager(path):
     Load transformation objects from X5 format
     """
 
-    from .regtools import Registration, MotionCorrection
+    from .regtricks import Registration, MotionCorrection
 
     with h5py.File(path, 'r') as f: 
         reg_type = f.attrs['Type']
@@ -85,7 +85,7 @@ def write_metadata(group):
 
     group.attrs['Format']   = X5_FORMAT
     group.attrs['Version']  = X5_VERSION
-    group.attrs['Metadata'] = json.dumps({'regtools' : 0.1})
+    group.attrs['Metadata'] = json.dumps({'regtricks' : 0.1})
 
 def read_metadata(group):
     """Read X5 format metadata"""
