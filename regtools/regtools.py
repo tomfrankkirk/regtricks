@@ -16,8 +16,8 @@ from .image_space import ImageSpace
 from . import x5_interface as x5 
 from . import application_helpers as apply
 from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct
+from . import multiplication as multiply 
 
-from scipy.ndimage import map_coordinates
 
 class Transform(object):
     """
@@ -65,13 +65,37 @@ class Transform(object):
     # of __matmul__, see: https://github.com/numpy/numpy/issues/9028
     __array_ufunc__ = None 
 
-    # def __matmul__(self, other):
-    #     other = cast_potential_array(other)
-    #     return self @ other 
+    def __matmul__(self, other):
 
-    # def __rmatmul__(self, other):
-    #     other = cast_potential_array(other)
-    #     return other @ self 
+        other = cast_potential_array(other)
+        high_type = multiply.get_highest_type(self, other)
+
+        if high_type is Registration: 
+            return multiply.registration(self, other)
+        elif high_type is MotionCorrection: 
+            return multiply.moco(self, other)
+        elif high_type is NonLinearRegistration: 
+            return multiply.nonlinearreg(self, other)
+        elif high_type is NonLinearMotionCorrection:
+            return multiply.nonlinearmoco(self, other)
+        else: 
+            raise NotImplementedError("Not Transformation objects")
+
+    def __rmatmul__(self, other):
+
+        other = cast_potential_array(other)
+        high_type = multiply.get_highest_type(self, other)
+
+        if high_type is Registration: 
+            return multiply.registration(other, self)
+        elif high_type is MotionCorrection: 
+            return multiply.moco(other, self)
+        elif high_type is NonLinearRegistration: 
+            return multiply.nonlinearreg(other, self)
+        elif high_type is NonLinearMotionCorrection:
+            return multiply.nonlinearmoco(other, self)
+        else: 
+            raise NotImplementedError("Not Transformation objects")
 
     def apply_to_image(self, src, ref, cores=1, **kwargs):
         """
@@ -218,38 +242,6 @@ class Registration(Transform):
         else:  
             return "ImageSpace object"
 
-    def __matmul__(self, other):
-        """
-        Matrix multiplication of registrations and motion corrections. The 
-        order of arguments follows matrix conventions: to get the transform 
-        AB, the multiplication needs to be B @ A. Any multiplication between
-        a registration and motion correction will cause the result to also be 
-        a motion correction. 
-
-        Accepted types: 4x4 np.array, registration, motion correction
-        """
-
-        # Cast 4x4 arrays to Registrations
-        other = cast_potential_array(other)
-
-        # Check for type promotion 
-        if isinstance(other, (MotionCorrection, NonLinearRegistration)):
-            return other.__rmatmul__(self)
-
-        overall_world = self.src2ref_world @ other.src2ref_world
-        return Registration(overall_world, other.src_spc, self.ref_spc,
-                            "world")
-
-    def __rmatmul__(self, other):
-
-        # Cast 4x4 arrays to Registrations
-        other = cast_potential_array(other)
-
-        # Check for type promotion 
-        if isinstance(other, (MotionCorrection, NonLinearRegistration)):
-            return other.__matmul__(self)
-
-        return other @ self 
     
     @property
     def ref2src_world(self):
@@ -394,52 +386,6 @@ class MotionCorrection(Registration):
                                  {t.src2ref_world[2,:]}
                                  {t.src2ref_world[3,:]}""")
         return dedent(text)
-
-    def __matmul__(self, other):
-        """In transformation terms, apply other first and then self"""
-
-        # Cast 4x4 arrays to Registrations
-        other = cast_potential_array(other)
-
-        # Type promotion: allow multiplication to be handled by 
-        # highest available class 
-        if isinstance(other, (NonLinearRegistration)):
-            return other.__matmul__(self)
-
-        if type(other) is Registration:
-            other = MotionCorrection.from_registration(other, len(self))
-
-        elif not len(self) == len(other):
-            raise RuntimeError("MotionCorrections must be of equal length")
-
-        elif type(other) is NonLinearMotionCorrection:
-            raise NotImplementedError("Cannot chain linear and non linear ",
-                                      "MotionCorrections")
-        
-        world_mats = [ m1 @ m2 for m1,m2 in 
-                       zip(self.src2ref_world, other.src2ref_world) ]
-        ret = MotionCorrection(world_mats, other.src_spc, self.ref_spc, 
-                               convention="world")
-
-        return ret 
-
-
-    def __rmatmul__(self, other):
-        """In transformation terms, apply self first and then other"""
-
-        # Cast 4x4 arrays to Registrations
-        other = cast_potential_array(other)
-
-        # Type promotion: allow multiplication to be handled by 
-        # highest available class 
-        if isinstance(other, (NonLinearRegistration)):
-            return other.__matmul__(self)
-
-        elif type(other) is Registration:
-            other = MotionCorrection.from_registration(other, len(self))
-
-        return other @ self
-
 
     @classmethod
     def identity(cls, length):
@@ -617,60 +563,6 @@ class NonLinearRegistration(Transform):
         """)
         return dedent(text)
 
-    def __matmul__(self, other):
-        """
-        In transformation terms, this is equivalent to applying other first
-        and then self, so we modify the premat and return a new NL object 
-        """
-
-        if type(other) is Registration: 
-            pre = self.premat @ other
-            return NonLinearRegistration._manual_construct(
-                    self.warp, other.src_spc, self.ref_spc, pre, self.postmat)
-
-        elif type(other) is MotionCorrection: 
-            premats = self.premat @ other
-            postmats = MotionCorrection.identity(len(premats))
-            return NonLinearMotionCorrection(self.warp, other.src_spc, 
-                                             self.ref_spc, premats, postmats)
-
-        elif type(other) is NonLinearRegistration: 
-
-            new_warp = NonLinearProduct(other.warp, other.postmat, 
-                                        self.premat, self.warp)
-
-            return NonLinearRegistration._manual_construct(
-                    new_warp, other.src_spc, self.ref_spc, other.premat, 
-                    self.postmat)
-
-        else: 
-            raise NotImplementedError("Cannot interpret multiplication of "
-                f"{type(self)} with {type(other)}")
-
-    def __rmatmul__(self, other):
-        """
-        In transformation terms, this is equivalent to applying self first
-        and then other, so we modify the post and return a new NL object 
-        """
-
-        if type(other) is Registration: 
-            post = other @ self.postmat
-            return NonLinearRegistration._manual_construct(
-                    self.warp, self.src_spc, other.ref_spc, self.premat, post)
-              
-        elif type(other) is MotionCorrection: 
-            postmats = other @ self.postmat
-            premats = MotionCorrection.identity(len(postmats))
-            return NonLinearMotionCorrection(self.warpfs, self.src_spc, 
-                                             other.ref_spc, premats, postmats)
-
-        elif type(other) is NonLinearRegistration: 
-            raise RuntimeError("This should be handled by the other")
-
-        else: 
-            raise NotImplementedError("Cannot interpret multiplication of "
-                f"{type(other)} with {type(self)}")
-
     def resolve(self, src, ref, length=1):
         """
         Generator returning coordinate arrays that map from reference 
@@ -749,30 +641,6 @@ class NonLinearMotionCorrection(NonLinearRegistration):
                 series length:   {len(self)}
                 """
         return dedent(text)
-
-    def __matmul__(self, other):
-        """Equivalent to doing other first, and then self"""
-
-        if type(other) is Registration:
-            pre = self.premat @ other
-            return NonLinearMotionCorrection(self.warpfs, other.src_spc, 
-                                             self.ref_spc, pre, self.postmat)
-
-        else: 
-            raise NotImplementedError("Cannot interpret multiplication of "
-                f"{type(self)} with {type(other)}")
-
-    def __rmatmul__(self, other):
-        """Equivalent to doing self first, and then other""" 
-
-        if type(other) is Registration:
-            post = other @ self.postmat 
-            return NonLinearMotionCorrection(self.warp, self.src_spc, 
-                                             other.ref_spc, self.premat, post)
-
-        else: 
-            raise NotImplementedError("Cannot interpret multiplication of "
-                f"{type(other)} with {type(self)}")
 
     def resolve(self, src, ref, length=1):
         """
