@@ -113,3 +113,45 @@ def aff_trans(matrix, points):
         return t[:3,:].T
     else: 
         return t[:3,:]
+
+def sum_array_blocks(array, factor):
+    """Sum sub-arrays of a larger array, each of which is sized according to factor. 
+    The array is split into smaller subarrays of size given by factor, each of which 
+    is summed, and the results returned in a new array, shrunk accordingly. 
+
+    Args:
+        array: n-dimensional array of data to sum
+        factor: n-length tuple, size of sub-arrays to sum over
+
+    Returns:
+        array of size array.shape/factor, each element containing the sum of the 
+            corresponding subarray in the input
+    """
+
+    if len(factor) != len(array.shape):
+        raise RuntimeError("factor must be of same length as number of dimensions")
+
+    if np.any(np.mod(factor, np.ones_like(factor))):
+        raise RuntimeError("factor must be of integer values only")
+
+    factor = [ int(f) for f in factor ]
+
+    outshape = [ int(s/f) for (s,f) in zip(array.shape, factor) ]
+    out = np.copy(array)
+
+    for dim in range(3):
+        newshape = [0] * 4
+
+        for d in range(3):
+            if d < dim: 
+                newshape[d] = outshape[d]
+            elif d == dim: 
+                newshape[d+1] = factor[d]
+                newshape[d] = outshape[d]
+            else: 
+                newshape[d+1] = array.shape[d]
+
+        newshape = newshape + list(array.shape[3:])
+        out = np.sum(out.reshape(newshape), axis=dim+1)
+
+    return out 

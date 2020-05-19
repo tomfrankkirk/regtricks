@@ -97,7 +97,7 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, cores=1, **kwargs):
+    def apply_to_image(self, src, ref, superlevel=1, cores=1, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -106,7 +106,11 @@ class Transform(object):
         Args:   
             src (str/NII/MGZ/FSLImage): image to transform 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            cores (int): CPU cores to use for 4D data (not for applywarp)
+            superlevel (int/iterable): resample onto a super-resolution copy
+                of the reference grid and sum back down to target (replicates
+                applywarp -super behaviour). Either a single integer value, or 
+                an iterable of values for each dimension, should be given. 
+            cores (int): CPU cores to use for 4D data
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -114,7 +118,7 @@ class Transform(object):
         """
 
         data, creator = apply.src_load_helper(src)
-        resamp = self.apply_to_array(data, src, ref, cores, **kwargs)
+        resamp = self.apply_to_array(data, src, ref, superlevel, cores, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         
@@ -128,7 +132,7 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, cores=1, **kwargs):
+    def apply_to_array(self, data, src, ref, superlevel=1, cores=1, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -138,7 +142,11 @@ class Transform(object):
             data (array): 3D or 4D array. 
             src (str/NII/MGZ/FSLImage/ImageSpace): current space of data 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            cores (int): CPU cores to use for 4D data (not for applywarp)
+            superlevel (int/iterable): resample onto a super-resolution copy
+                of the reference grid and sum back down to target (replicates
+                applywarp -super behaviour). Either a single integer value, or 
+                an iterable of values for each dimension, should be given. 
+            cores (int): CPU cores to use for 4D data
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -150,10 +158,25 @@ class Transform(object):
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
 
+        # Force superlevel into an integer array of length 3 for 3D data 
+        # or array of (XYZ,1) for 4D data 
+        superlevel = np.array(superlevel).round().astype(np.int16)
+        if superlevel.size == 1: superlevel *= np.ones(3)
+        if len(data.shape) == 4: superlevel = np.array((*superlevel, 1))
+
+        # Create super-resolution reference grid
+        if (superlevel != 1).any(): 
+            ref = ref.resize_voxels(1/superlevel, 'ceil')
+
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
 
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
+
+        # Sum back down if super-resolution 
+        if (superlevel != 1).any():
+            resamp = apply.sum_array_blocks(resamp, superlevel)
+
         return resamp      
 
 
