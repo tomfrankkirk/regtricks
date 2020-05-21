@@ -174,7 +174,6 @@ class Transform(object):
         # or array of (XYZ,1) for 4D data 
         superlevel = np.array(superlevel).round().astype(np.int16)
         if superlevel.size == 1: superlevel *= np.ones(3)
-        if len(data.shape) == 4: superlevel = np.array((*superlevel, 1))
 
         # Create super-resolution reference grid
         if (superlevel != 1).any(): 
@@ -186,6 +185,7 @@ class Transform(object):
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 
         # Sum back down if super-resolution 
+        if len(data.shape) == 4: superlevel = np.array((*superlevel, 1))
         if (superlevel != 1).any():
             resamp = apply.sum_array_blocks(resamp, superlevel)
 
