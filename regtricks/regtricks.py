@@ -718,6 +718,8 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         assert (isinstance(premat, (Registration, np.ndarray)) 
                 or isinstance(postmat, (Registration, np.ndarray)))
 
+        # Expand the pre/postmats to be MotionCorrections of equal length, 
+        # if they are not already 
         if len(premat) > len(postmat):
             assert len(postmat) == 1, 'Different length pre/postmats given'
             postmat = MotionCorrection.from_registration(postmat, len(premat))
@@ -729,6 +731,13 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         else:
             if not len(premat) == len(postmat): 
                 raise ValueError('Different length pre/postmats')
+
+        # Likewise expand the midmat if we have a NLP as the warp 
+        if (type(warp) is NonLinearProduct) and (len(warp.midmat) != len(premat)):
+            if len(warp.midmat) == 1: 
+                self.warp.midmat = MotionCorrection.from_registration(warp.midmat, len(premat))
+            else: 
+                raise ValueError("Different length pre/midmats")
 
         self.premat = premat 
         self.postmat = postmat 
