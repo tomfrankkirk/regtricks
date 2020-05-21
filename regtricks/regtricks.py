@@ -50,6 +50,14 @@ class Transform(object):
         else: 
             return None 
 
+    @property
+    def is_linear(self):
+        return (type(self) in [Registration, MotionCorrection])
+
+    @property 
+    def is_nonlinear(self):
+        return not self.is_linear
+
     def save(self, path):
         """Save transformation at path in X5 format (experimental)"""
 
