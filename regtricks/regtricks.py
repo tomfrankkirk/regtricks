@@ -15,8 +15,12 @@ from fsl.wrappers import applywarp
 from .image_space import ImageSpace
 from . import x5_interface as x5 
 from . import application_helpers as apply
-from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct
+from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct, det_jacobian
 from . import multiplication as multiply 
+
+# TODO: remove src/ref from transforms
+# remove "assuming FSL convention..."
+# allow for [] indexing of motion corrections 
 
 
 class Transform(object):
@@ -338,6 +342,9 @@ class Registration(Transform):
             (np.ndarray, n x 3) coordinates on which to interpolate 
         """
 
+        # Array of all voxel indices in the reference grid
+        # Map them into world coordinates, apply the transform
+        # and then into source voxel coordinates for the interpolation 
         ref2src_vox = (src.world2vox @ self.ref2src_world @ ref.vox2world)
         ijk = ref.ijk_grid('ij').reshape(-1, 3)
         ijk = apply.aff_trans(ref2src_vox, ijk).T
@@ -489,7 +496,10 @@ class MotionCorrection(Registration):
         Yields: 
             (np.ndarray, n x 3) coordinates on which to interpolate 
         """
-
+        
+        # Array of all voxel indices in the reference grid
+        # Map them into world coordinates, apply the transform
+        # and then into source voxel coordinates for the interpolation 
         ijk = ref.ijk_grid('ij').reshape(-1, 3).T
         for _, r2s in zip(range(length), self.ref2src_world):
             ref2src_vox = (src.world2vox @ r2s @ ref.vox2world)
@@ -499,18 +509,21 @@ class MotionCorrection(Registration):
 class NonLinearRegistration(Transform):
     """
     Non linear registration transformation. Currently only FSL FNIRT warps
-    are supported. 
+    are supported. Note that the --premat and --postmat used by FSL command
+    line tools should not be supplied here. Instead, defined them as 
+    Registration objects and use chain() to concatenate them with NLRs. 
+
     
     Args: 
-        warp: path to FNIRT warp coefficient field 
-        src: source (path, ImageSpace) used for generating FNIRT coefficients
-        ref: reference (path, ImageSpace) used for generating FNIRT coefficients 
-        premat: affine registration to apply prior to warp (note, the --aff 
-            used when running FNIRT does not need to be supplied)
-        postmat: affine to apply after warp 
+        warp (path): FNIRT coefficient field 
+        src (path/ImageSpace): source image used for generating FNIRT coefficients
+        ref (path/ImageSpace): reference image used for generating FNIRT coefficients 
+        intensity_correct: intensity correct output via the Jacobian determinant
+            of this warp (when self.apply_to*() is called)
     """
 
-    def __init__(self, warp, src, ref, premat=np.eye(4), postmat=np.eye(4)):
+    def __init__(self, warp, src, ref, premat=np.eye(4), postmat=np.eye(4),
+                 intensity_correct=False):
 
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
@@ -520,25 +533,42 @@ class NonLinearRegistration(Transform):
             src = ImageSpace(src)
         self.src_spc = src 
 
+        self.premat = Registration.identity()
+        self.postmat = Registration.identity()
         self.warp = FNIRTCoefficients(warp, src, ref)
-        self.premat = Registration(np.eye(4), src, ref, "world")
-        self.postmat = Registration(np.eye(4), src, ref, "world")
+
+        # We store intensity correction as an integer private variable,
+        # as it can take the values 0,1,2,3 (this includes NonLinearMC subclass)
+        # 0: no intensity correction
+        # 1: intensity correction, or if the warp is a NonLinearProduct, then
+        #       intensity correct the FIRST warp 
+        # 2: intensity correct the second warp of a NLP 
+        # 3: intensity correct both warps of a NLP  
+        self._intensity_correct = int(intensity_correct)
+
+    @property
+    def intensity_correct(self):
+        return bool(self._intensity_correct)
+
+    @intensity_correct.setter
+    def intensity_correct(self, flag):
+        self._intensity_correct = int(flag)
 
     def __len__(self):
         return 1
 
     @classmethod
-    def _manual_construct(cls, warp, src, ref, premat, postmat):
+    def _manual_construct(cls, warp, src, ref, premat, postmat, 
+                          intensity_correct=False):
         """Manual constructor, to be used from __matmul__ and __rmatmul__"""
         
         x = cls.__new__(cls)
         x.warp = warp
         x.src_spc = src 
         x.ref_spc = ref 
-        # assert type(premat) is Registration
-        # assert type(postmat) is Registration
         x.premat = premat 
         x.postmat = postmat 
+        x.intensity_correct = int(intensity_correct)
         return x 
 
     def inverse(self):
@@ -596,34 +626,76 @@ class NonLinearRegistration(Transform):
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            length (int): number of arrays to yield (repeated copies)
+            length (int): number of arrays to yield (repeated copies, useful
+                for 4D data, default 1)
 
         Yields: 
-            (np.ndarray, n x 3) coordinates on which to interpolate 
+            if intensity correction not set on self : 
+                (np.ndarray) n x 3, coordinates on which to interpolate 
+            if intensity correction set on self: 
+                (np.ndarray, np.array) tuple of arrays, sized (n,3) and (X,Y,Z)
+                    respectively. Coordinate arrays and Jacobian determinants 
+                    evaluated on the reference grid. 
         """
 
-        warped_fsl = next(self.warp.get_displacements(ref, self.postmat, length))
+        # Prepare the generator to yield displacement fields from the warp 
+        # Prepare the single overall transformation of premat and world/voxel
+        # matrices that is required for interpolation 
+        dfield = next(self.warp.get_displacements(ref, self.postmat, length))
         ref2src_vox = (src.world2vox 
                        @ self.premat.ref2src_world 
                        @ self.warp.src_spc.FSL2world)
+        ijk = apply.aff_trans(ref2src_vox, dfield).T
 
-        ijk = apply.aff_trans(ref2src_vox, warped_fsl).T
+        if self.intensity_correct: 
+
+            # Either a single warp, or intensity correction from both warps. 
+            # Either way, calculate detJ on the overall final displacement field, which is
+            # given by dfield (including any reqd postmats)
+            if (type(self.warp) is not NonLinearProduct) or (self._intensity_correct == 3): 
+                scale = det_jacobian(dfield.reshape(*ref.size, 3), ref.vox_size)
+
+            # Intensity correct on second warp. Just calculate the displacement field
+            # for the second warp and the corresponding postmat. 
+            elif self._intensity_correct == 2: 
+                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat)
+                scalar = det_jacobian(next(dfield2).reshape(*ref.size, 3), ref.vox_size)
+
+            # Intensity correct on first warp. Calculate the displacement field on 
+            # the first warp. Then calculate the successor transform: the midmat, 
+            # the second warp, and the final postmat; and run the detJ through the 
+            # successor transform 
+            else: 
+                assert self._intensity_correct == 1 
+                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity())
+                scalar = det_jacobian(next(dfield1).reshape(*ref.size, 3), ref.vox_size)
+                successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
+                    self.warp.warp2.ref_spc, premat=self.warp.midmat, postmat=self.postmat)
+                scale = successor.apply_to_array(scalar, ref, ref, cores=1, superlevel=1)
+
         for _ in range(length):
-            yield ijk 
+            if not self.intensity_correct: 
+                yield ijk
+            else: 
+                yield ijk, scale 
+
 
 class NonLinearMotionCorrection(NonLinearRegistration):
     """
-    Only to be created by multiplication of other classes. 
+    Only to be created by multiplication of other classes. Don't go here!
 
     Args: 
-        warp: FNIRTCoefficients object 
+        warp: FNIRTCoefficients object or NonLinearProduct 
         src: src of transform
         ref: ref of transform
         premat: list of Registration objects
         postmat: list of Registration objects
+        intensity_correct: int (0/1/2/3), whether to apply intensity
+            correction, and at what stage in the case of NLPs
     """
 
-    def __init__(self, warp, src, ref, premat, postmat):
+    def __init__(self, warp, src, ref, premat, postmat, 
+                 intensity_correct=0):
         
         self.warp = warp
 
@@ -652,6 +724,9 @@ class NonLinearMotionCorrection(NonLinearRegistration):
 
         self.premat = premat 
         self.postmat = postmat 
+        if intensity_correct > 1 and (type(warp) is not NonLinearProduct): 
+            raise ValueError("Intensity correction value implies NonLinearProduct")
+        self._intensity_correct = intensity_correct
 
     def __len__(self):
         return len(self.premat)
@@ -679,17 +754,56 @@ class NonLinearMotionCorrection(NonLinearRegistration):
                 within the overall series, in order)
 
         Yields: 
-            (np.ndarray, n x 3) coordinates on which to interpolate 
+            if intensity correction not set on self : 
+                (np.ndarray) n x 3, coordinates on which to interpolate 
+            if intensity correction set on self: 
+                (np.ndarray, np.array) tuple of arrays, sized (n,3) and (X,Y,Z)
+                    respectively. Coordinate arrays and Jacobian determinants 
+                    evaluated on the reference grid. 
         """
 
-        for idx, (pre, warped_fsl) in enumerate(zip(
-                self.premat.ref2src_world, 
-                self.warp.get_displacements(ref, self.postmat, length))): 
+        # Prepare the generator to yield displacement fields from the warp 
+        dfields = self.warp.get_displacements(ref, self.postmat, length)
+        for idx, (pre, dfield) in enumerate(zip(self.premat.ref2src_world, 
+                                                    dfields)): 
 
+            # Prepare the single overall transformation of premat and
+            #  world/voxel matrices that is required for interpolation 
             ref2src_vox = (src.world2vox @ pre @ self.warp.src_spc.FSL2world)
-            ijk = apply.aff_trans(ref2src_vox, warped_fsl).T
-            yield ijk 
+            ijk = apply.aff_trans(ref2src_vox, dfield).T
 
+            if self.intensity_correct: 
+
+                # Either a single warp, or intensity correction from both warps. 
+                # Either way, calculate detJ on the overall final displacement field, which is
+                # given by dfield (including any reqd postmats)
+                if (type(self.warp) is not NonLinearProduct) or (self._intensity_correct == 3): 
+                    scale = det_jacobian(dfield.reshape(*ref.size, 3), ref.vox_size)
+                    yield ijk, scale 
+
+                # Intensity correct on second warp. Just calculate the displacement field
+                # for the second warp and the corresponding postmat. 
+                elif self._intensity_correct == 2: 
+                    dfield2 = self.warp.warp2.get_displacements(ref, self.postmat.transforms[idx])
+                    scalar = det_jacobian(next(dfield2).reshape(*ref.size, 3), ref.vox_size)
+                    yield ijk, scale  
+
+                # Intensity correct on first warp. Calculate the displacement field on 
+                # the first warp. Then calculate the successor transform: the midmat, 
+                # the second warp, and the final postmat; and run the detJ through the 
+                # successor transform 
+                else: 
+                    assert self._intensity_correct == 1 
+                    dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity())
+                    scalar = det_jacobian(next(dfield1).reshape(*ref.size, 3), ref.vox_size)
+                    successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
+                        self.warp.warp2.ref_spc, premat=self.warp.midmat.transforms[idx], postmat=self.postmat.transforms[idx])
+                    scale = successor.apply_to_array(scalar, ref, ref, cores=1, superlevel=1)
+                    yield ijk, scale  
+
+            else: 
+                yield ijk 
+       
 
 def chain(*args):
     """ 
