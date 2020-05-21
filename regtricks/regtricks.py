@@ -16,7 +16,7 @@ from .image_space import ImageSpace
 from . import x5_interface as x5 
 from . import application_helpers as apply
 from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct, det_jacobian
-from . import multiplication as multiply 
+from . import multiplication as multiply
 
 # TODO: remove src/ref from transforms
 # remove "assuming FSL convention..."
@@ -79,7 +79,7 @@ class Transform(object):
 
     def __matmul__(self, other):
 
-        other = cast_potential_array(other)
+        other = multiply.cast_potential_array(other)
         high_type = multiply.get_highest_type(self, other)
 
         if high_type is Registration: 
@@ -95,7 +95,7 @@ class Transform(object):
 
     def __rmatmul__(self, other):
 
-        other = cast_potential_array(other)
+        other = multiply.cast_potential_array(other)
         high_type = multiply.get_highest_type(self, other)
 
         if high_type is Registration: 
@@ -821,62 +821,3 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             else: 
                 yield ijk 
        
-
-def chain(*args):
-    """ 
-    Concatenate a series of registrations.
-
-    Args: 
-        *args: Registration objects, given in the order that they need to be 
-            applied (eg, for A -> B -> C, give them in that order and they 
-            will be multiplied as C @ B @ A)
-
-    Returns: 
-        Registration object, with the first registration's source 
-        and the last's reference (if these are not None)
-    """
-
-    if (len(args) == 1):
-        chained = args
-    else: 
-
-        # As we cannot multiply two NLMCs together, if we find two adjacent
-        # NLRs in sequence then multiply them together first (in anticpation
-        # that they may later be promoted to MCs by other items in the chain.
-        # The below block picks out adjacent NLs, handles them, and inserts
-        # the result back into the appropriate spot 
-        args = list(args)
-        while True: 
-            did_update = False 
-            for idx in range(len(args)-2):
-                if ((type(args[idx]) is NonLinearRegistration) 
-                    and (type(args[idx+1]) is NonLinearRegistration)):
-                    combined = chain(args[idx], args[idx+1])
-                    # combined = Registration.identity()
-                    args = args[:idx] + [combined] + args[idx+2:] 
-                    did_update = True 
-                    break 
-            if not did_update: 
-                break 
-
-        if not all([isinstance(r, Transform) for r in args ]):
-            raise RuntimeError("Each item in sequence must be a",
-                               " Registration, MotionCorrection or NonLinearRegistration")
-                               
-        # We do the first pair explicitly (in case there are only two)
-        # and then we do all others via pre-multiplication 
-        chained = args[1] @ args[0]
-        for r in args[2:]:
-            chained = r @ chained 
-
-    return chained 
-
-
-def cast_potential_array(arr):
-    """Helper to convert 4x4 arrays to Registrations if not already"""
-
-    if type(arr) is np.ndarray: 
-        assert arr.shape == (4,4)
-        arr = copy.deepcopy(arr)
-        arr = Registration(arr)
-    return arr

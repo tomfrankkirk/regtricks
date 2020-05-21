@@ -1,5 +1,10 @@
-import numpy as np 
 from collections import defaultdict
+import copy 
+
+import numpy as np 
+
+# TODO: doc this 
+
 
 def get_highest_type(first, second):
     from .regtricks import (Registration, MotionCorrection,
@@ -150,3 +155,48 @@ def nonlinearmoco(lhs, rhs):
     else: 
         raise NotImplementedError("Cannot interpret multiplication of "
                 f"{type(lhs)} with {type(rhs)}")
+
+
+def chain(*args):
+    """ 
+    Concatenate a series of registrations.
+
+    Args: 
+        *args: Registration objects, given in the order that they need to be 
+            applied (eg, for A -> B -> C, give them in that order and they 
+            will be multiplied as C @ B @ A)
+
+    Returns: 
+        Registration object, with the first registration's source 
+        and the last's reference (if these are not None)
+    """
+
+    from .regtricks import Transform
+
+    if (len(args) == 1):
+        chained = args
+    else: 
+
+        if not all([isinstance(r, Transform) for r in args ]):
+            raise RuntimeError("Each item in sequence must be a",
+                               " Registration, MotionCorrection or NonLinearRegistration")
+                               
+        # We do the first pair explicitly (in case there are only two)
+        # and then we do all others via pre-multiplication 
+        chained = args[1] @ args[0]
+        for r in args[2:]:
+            chained = r @ chained 
+
+    return chained 
+
+
+def cast_potential_array(arr):
+    """Helper to convert 4x4 arrays to Registrations if not already"""
+
+    from .regtricks import Registration
+
+    if type(arr) is np.ndarray: 
+        assert arr.shape == (4,4)
+        arr = copy.deepcopy(arr)
+        arr = Registration(arr)
+    return arr
