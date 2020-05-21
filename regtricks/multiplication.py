@@ -173,21 +173,22 @@ def chain(*args):
 
     from .regtricks import Transform
 
-    if (len(args) == 1):
-        chained = args
+    if not all([ isinstance(r, Transform) for r in args ]):
+        raise RuntimeError("Each item in sequence must be a",
+                        " Registration, MotionCorrection or NonLinearRegistration")
+
+    # Do nothing for a single or no args 
+    if (len(args) < 2):
+        return args
+
+    # Two: multiply them in reverse order 
+    elif len(args) == 2:
+        return args[1] @ args[0]
+
+    # Everything else: multiply the last one by the chain
+    # of the remainder  
     else: 
-
-        if not all([isinstance(r, Transform) for r in args ]):
-            raise RuntimeError("Each item in sequence must be a",
-                               " Registration, MotionCorrection or NonLinearRegistration")
-                               
-        # We do the first pair explicitly (in case there are only two)
-        # and then we do all others via pre-multiplication 
-        chained = args[1] @ args[0]
-        for r in args[2:]:
-            chained = r @ chained 
-
-    return chained 
+        return args[-1] @ chain(*args[:-1])
 
 
 def cast_potential_array(arr):
