@@ -318,7 +318,7 @@ class ImageSpace(object):
             a transformed copy of this image space 
         """
 
-        from regtools import Registration
+        from regtricks import Registration
 
         if isinstance(reg, Registration):
             reg = reg.src2ref_world

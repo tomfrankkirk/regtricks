@@ -1,4 +1,4 @@
-import regtools as rt 
+import regtricks as rt 
 import numpy as np 
 import nibabel
 from nibabel import Nifti2Image, MGHImage
@@ -174,4 +174,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    test_mcasl()
+    test_type_promotion()

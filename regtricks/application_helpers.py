@@ -5,6 +5,7 @@ import os.path as op
 import subprocess
 import os 
 import shutil 
+import itertools
 
 import nibabel
 from nibabel import Nifti1Image, MGHImage
@@ -46,6 +47,29 @@ def _make_iterable(data):
         return data.reshape(1, *data.shape)
 
 
+def interpolate_and_scale(data, coords_scale, out_size, **kwargs):
+    """
+    Used for partial function application to share interpolation jobs
+    amongst workers of a mp.Pool(). Interpolate data onto the coordinates
+    given in the tuple coords_scale, and multiply the output by the other
+    value in coords_scale. Reshape the output to size out_size. 
+
+    Args: 
+        data (np.ndarray): 3D, image data 
+        coords_scale (np.ndarray, np.ndarray): (N,3) coordinates to interpolate
+            onto (indices into data array), value by which to scale output
+            (int or another np.ndarray for intensity correction)
+        out_size (np.ndarray): 3-vector, shape of output
+        **kwargs: passed onto scipy map_coordinates
+
+    Returns: 
+       (np.ndarray), sized as out_size, interpolated output 
+    """
+
+    interp = map_coordinates(data, coords_scale[0], **kwargs)
+    return interp.reshape(out_size) * coords_scale[1] 
+
+
 def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     """
     Apply a transform to an array of data, mapping from source space 
@@ -77,8 +101,21 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     # map the REFERENCE voxels into the SOURCE space and do the interpolation
     # there
     data = _make_iterable(data)
-    worker = functools.partial(map_coordinates, **kwargs)
-    worker_args = zip(data, transform.resolve(src_spc, ref_spc, data.shape[0]))
+    worker = functools.partial(interpolate_and_scale, out_size=ref_spc.size, **kwargs)
+
+    # If intensity correction has been requested on a NL transform, then resolve
+    # will return tuples of (coordinates, scale factors). Pass these on as they
+    # are
+    if (transform.is_nonlinear and transform.intensity_correct): 
+        coords_scales = transform.resolve(src_spc, ref_spc, data.shape[0])
+        worker_args = zip(data, coords_scales)
+    
+    # If intensity correction has not been requested on a NL transform, then 
+    # resolve returns array of coordinates only. In which case, zip them up
+    # into tuples (coordinates, 1), used as a dummy scale factor 
+    else: 
+        coords = transform.resolve(src_spc, ref_spc, data.shape[0])
+        worker_args = zip(data, zip(coords, itertools.repeat(1)))
 
     # Distribute amongst workers 
     if cores == 1:  
@@ -89,7 +126,7 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
 
     # Stack all the individual volumes back up in time dimension 
     # Clip the array to the original min/max values 
-    resamp = np.stack([r.reshape(ref_spc.size) for r in resamp], axis=3)
+    resamp = np.stack(resamp, axis=3)
     return np.clip(np.squeeze(resamp), data.min(), data.max()) 
 
 
@@ -113,3 +150,45 @@ def aff_trans(matrix, points):
         return t[:3,:].T
     else: 
         return t[:3,:]
+
+def sum_array_blocks(array, factor):
+    """Sum sub-arrays of a larger array, each of which is sized according to factor. 
+    The array is split into smaller subarrays of size given by factor, each of which 
+    is summed, and the results returned in a new array, shrunk accordingly. 
+
+    Args:
+        array: n-dimensional array of data to sum
+        factor: n-length tuple, size of sub-arrays to sum over
+
+    Returns:
+        array of size array.shape/factor, each element containing the sum of the 
+            corresponding subarray in the input
+    """
+
+    if len(factor) != len(array.shape):
+        raise RuntimeError("factor must be of same length as number of dimensions")
+
+    if np.any(np.mod(factor, np.ones_like(factor))):
+        raise RuntimeError("factor must be of integer values only")
+
+    factor = [ int(f) for f in factor ]
+
+    outshape = [ int(s/f) for (s,f) in zip(array.shape, factor) ]
+    out = np.copy(array)
+
+    for dim in range(3):
+        newshape = [0] * 4
+
+        for d in range(3):
+            if d < dim: 
+                newshape[d] = outshape[d]
+            elif d == dim: 
+                newshape[d+1] = factor[d]
+                newshape[d] = outshape[d]
+            else: 
+                newshape[d+1] = array.shape[d]
+
+        newshape = newshape + list(array.shape[3:])
+        out = np.sum(out.reshape(newshape), axis=dim+1)
+
+    return out 

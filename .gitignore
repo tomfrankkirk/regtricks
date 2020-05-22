@@ -13,3 +13,7 @@ spline_tests
 docs
 *.log 
 *.ipynb 
+build*
+dist*
+*.egg*
+regtricks/_version.py

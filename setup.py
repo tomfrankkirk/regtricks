@@ -5,7 +5,7 @@ import subprocess
 import re 
 import io 
 
-PACKAGE_NAME = 'regtools'
+PACKAGE_NAME = 'regtricks'
 ROOTDIR = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -25,7 +25,7 @@ def git_version():
         version_regex = re.compile(r"v[0-9]+(\.[0-9]+)*-\d*")
         match = version_regex.match(full_version)
         if match:
-            std_version = match.group(0).replace("-", ".post")
+            std_version = match.group(0).replace("-", ".")
         else:
             raise RuntimeError("Failed to parse version string %s" % full_version)
         return full_version, std_version
@@ -53,6 +53,7 @@ def update_metadata(version_str, timestamp_str):
 def get_requirements():
     """ Get a list of all entries in the requirements file """
     with io.open(os.path.join(ROOTDIR, 'requirements.txt'), encoding='utf-8') as f:
+        # print([l.strip() for l in f.readlines()])
         return [l.strip() for l in f.readlines()]
 
 
@@ -86,6 +87,5 @@ setup(name=PACKAGE_NAME,
       long_description_content_type='text/markdown',
       author='Tom Kirk',
       author_email='thomas.kirk@eng.ox.ac.uk',
-      setup_requires=['numpy'],
       install_requires=get_requirements(),
       packages=find_packages())
