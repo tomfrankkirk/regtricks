@@ -80,7 +80,7 @@ def nonlinearreg(lhs, rhs):
 
         pre = lhs.premat @ rhs 
         return constructor(lhs.warp, rhs.src_spc, lhs.ref_spc, pre, 
-                           lhs.postmat, lhs.intensity_correct)
+                           lhs.postmat, lhs._intensity_correct)
 
     #  lhs    rhs 
     # other @ NLR
@@ -93,7 +93,7 @@ def nonlinearreg(lhs, rhs):
 
         post = lhs @ rhs.postmat
         return constructor(rhs.warp, rhs.src_spc, lhs.ref_spc, rhs.premat, 
-                           post, rhs.intensity_correct)
+                           post, rhs._intensity_correct)
 
     # lhs   rhs 
     # NLR @ NLR
@@ -128,7 +128,7 @@ def nonlinearmoco(lhs, rhs):
     if isinstance(rhs, Registration): 
         pre = lhs.premat @ rhs 
         return NonLinearMotionCorrection(rhs.warp, 
-            rhs.src_spc, lhs.ref_spc, pre, lhs.postmat, lhs.intensity_correct)
+            rhs.src_spc, lhs.ref_spc, pre, lhs.postmat, lhs._intensity_correct)
 
     #  lhs    rhs 
     # other @ NLMC
@@ -136,7 +136,7 @@ def nonlinearmoco(lhs, rhs):
     elif isinstance(lhs, Registration): 
         post = lhs @ rhs.postmat
         return NonLinearMotionCorrection(rhs.warp, 
-            rhs.src_spc, lhs.ref_spc, rhs.premat, post, rhs.intensity_correct)
+            rhs.src_spc, lhs.ref_spc, rhs.premat, post, rhs._intensity_correct)
 
     # lhs  rhs 
     # NL @ NL
