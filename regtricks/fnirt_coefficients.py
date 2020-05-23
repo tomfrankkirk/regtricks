@@ -38,10 +38,7 @@ class FNIRTCoefficients(object):
             src = ImageSpace(src)
         self.src_spc = src 
 
-    def get_displacements(self, ref, postmat, length=1): 
-
-        if not isinstance(ref, ImageSpace):
-            ref = ImageSpace(ref)
+    def get_cache_value(self, ref, postmat):
 
         # If we have series of postmats, check if they are all identitical
         if len(postmat) > 1: 
@@ -49,20 +46,18 @@ class FNIRTCoefficients(object):
                           for m in postmat.src2ref_world ])
             if same1: 
                 pmat = postmat.transforms[0].to_fsl(self.ref_spc, ref)
-            else: 
-                pmat = [ t.to_fsl(self.ref_spc, ref) for t in postmat.transforms ] 
         else: 
             same1 = True 
             pmat = postmat.to_fsl(self.ref_spc, ref)
 
         if same1: 
-            dfield = get_field(self.coefficients, ref, post=pmat)
-            for _, df in zip(range(length), itertools.repeat(dfield)): 
-                yield df
-
+            return get_field(self.coefficients, ref, post=pmat)
         else: 
-            for _, p in zip(range(length), pmat): 
-                yield get_field(self.coefficients, ref, post=p)
+            return None 
+
+    def get_displacements(self, ref, postmat): 
+        post = postmat.to_fsl(self.ref_spc, ref)
+        return get_field(self.coefficients, ref, post=post)
 
 
 class NonLinearProduct(object):
@@ -81,8 +76,7 @@ class NonLinearProduct(object):
         
         self.midmat = second_pre @ first_post
 
-
-    def get_displacements(self, ref, postmat, length=1):
+    def get_cache_value(self, ref, postmat):
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
 
@@ -91,39 +85,48 @@ class NonLinearProduct(object):
             same1 = all([ np.allclose(postmat.src2ref_world[0], m) 
                           for m in postmat.src2ref_world ])
             if same1: 
-                pmat = itertools.repeat(postmat.transforms[0].to_fsl(self.warp2.ref_spc, ref))
-            else: 
-                pmat = [ t.to_fsl(self.warp2.ref_spc, ref) for t in postmat.transforms ] 
+                pmat = postmat.transforms[0].to_fsl(self.warp2.ref_spc, ref)
         else: 
             same1 = True 
-            pmat = itertools.repeat(postmat.to_fsl(self.warp2.ref_spc, ref))
+            pmat = postmat.to_fsl(self.warp2.ref_spc, ref)
 
         if len(self.midmat) > 1: 
             same2 = all([ np.allclose(self.midmat.src2ref_world[0], m) 
                           for m in self.midmat.src2ref_world ])
             if same2: 
-                mmat = itertools.repeat(self.midmat.transforms[0].to_fsl(self.warp1.ref_spc, self.warp2.src_spc))
-            else: 
-                mmat = [ t.to_fsl(self.warp1.ref_spc, self.warp2.src_spc) for t in self.midmat.transforms ]
+                mmat = self.midmat.transforms[0].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+
         else: 
             same2 = True 
-            mmat = itertools.repeat(self.midmat.to_fsl(self.warp1.ref_spc, self.warp2.src_spc))
+            mmat = self.midmat.to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
 
         same = (same1 & same2)
 
-        # If they are all the same, compute the field once 
         if same: 
-            dfield = get_field(self.warp1.coefficients, ref, self.warp2.coefficients, next(mmat), next(pmat))
-            for _, df in zip(range(length), itertools.repeat(dfield)): 
-                yield df
-
-        # If not, compute the field repeatedly for each (mid, post) pair
+            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients,mmat, pmat)
         else: 
-            for _, m, p in zip(range(length), mmat, pmat):
-                yield get_field(self.warp1.coefficients, ref, self.warp2.coefficients, m, p)
+            return None 
+
+    def get_displacements(self, ref, postmat, at_idx):
+        if at_idx > len(self) and len(self) == 1: 
+            mid = self.midmat.to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+            post = postmat.to_fsl(self.warp2.ref_spc, ref)
+            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
+
+        elif at_idx < len(self):
+            mid = self.warp.midmat.transforms[at_idx].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+            post = postmat.transforms[at_idx].to_fsl(self.warp2.ref_spc, ref)
+            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
+
+        else: 
+            raise ValueError("Requested index within transform exceeds series length")
+
+        return None 
 
 
 def get_field(coeff1, ref, coeff2=None, mid=None, post=None):
+
+    # TODO: enforce type checks here. 
     with tempfile.TemporaryDirectory() as d: 
         w1 = op.join(d, 'w1.nii.gz')
         nibabel.save(coeff1, w1)

@@ -21,16 +21,24 @@ from . import multiplication as multiply
 # TODO: remove src/ref from transforms
 # remove "assuming FSL convention..."
 # allow for [] indexing of motion corrections 
+# cache for intensity correction?
 
 
 class Transform(object):
     """
     Base object for all transformations. This should never actually be 
-    instantiated but is instead used to provide common functions
+    instantiated but is instead used to provide common functions. 
+    
+    Attributes: 
+        _cache: use for storing resolved displacement fields and sharing
+            amongst workers in multiprocessing pool 
+        islinear: Registrations or MotionCorrections
+        isnonlinear: NonLinearRegistrations or NLMCs 
+
     """
     
     def __init__(self):
-        raise NotImplementedError() 
+        self._cache = None 
 
     @property
     def src_header(self):
@@ -72,6 +80,19 @@ class Transform(object):
 
     def __repr__(self):
         raise NotImplementedError()
+
+    def reset_cache(self):
+        self.cache = None 
+
+    @property
+    def cache(self):
+        return self._cache
+
+    @cache.setter
+    def cache(self, new):
+        if not ((new is None) or isinstance(new, np.ndarray)):
+            raise ValueError("Cache can only be None or np.ndarray")
+        self._cache = new 
 
     # We need to explicitly not implement np.array_ufunc to allow overriding
     # of __matmul__, see: https://github.com/numpy/numpy/issues/9028
@@ -210,6 +231,7 @@ class Registration(Transform):
     """
 
     def __init__(self, src2ref, src=None, ref=None, convention=""):
+        Transform.__init__(self)
 
         if isinstance(src2ref, str): 
             src2ref = np.loadtxt(src2ref)
@@ -308,6 +330,7 @@ class Registration(Transform):
         np.savetxt(path, self.src2ref_world)
 
     def apply_to_grid(self, src):
+        # TODO: move this onto the image space class 
         """
         Apply registration to the voxel grid of an image, retaining original
         voxel data (no resampling). This is equivalent to shifting the image
@@ -334,30 +357,37 @@ class Registration(Transform):
             else: 
                 return ret 
 
-    def resolve(self, src, ref, length=1):
+    def prepare_cache(self, ref):
         """
-        Generator returning coordinate arrays that map from reference 
-        voxel coordinates into source voxel coordinates, including the 
-        transform itself.
+        Cache re-useable data before interpolate_and_scale. Just the voxel
+        index grid of the reference space is stored
+        """
+
+        self.cache = ref.ijk_grid('ij').reshape(-1, 3)
+
+    def resolve(self, src, ref, *unused):
+        """
+        Return a coordinate array and scale factor that maps reference voxels
+        into source voxels, including the transform. Uses cached values, if
+        available. 
 
         Args: 
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            length (int): number of arrays to yield (identical copies)
 
-        Yields: 
-            (np.ndarray, n x 3) coordinates on which to interpolate 
+        Returns: 
+            (np.ndarray, 1) coordinates on which to interpolate and identity 
+                scale factor
         """
 
         # Array of all voxel indices in the reference grid
         # Map them into world coordinates, apply the transform
         # and then into source voxel coordinates for the interpolation 
         ref2src_vox = (src.world2vox @ self.ref2src_world @ ref.vox2world)
-        ijk = ref.ijk_grid('ij').reshape(-1, 3)
-        ijk = apply.aff_trans(ref2src_vox, ijk).T
-        for _ in range(length):
-            yield ijk 
+        ijk = apply.aff_trans(ref2src_vox, self.cache).T
+        scale = 1 
+        return (ijk, scale)
 
 
 class MotionCorrection(Registration):
@@ -382,6 +412,7 @@ class MotionCorrection(Registration):
     """
 
     def __init__(self, mats, src=None, ref=None, convention=None):
+        Transform.__init__(self)
 
         if isinstance(mats, str):
             mats = sorted(glob.glob(op.join(mats, '*')))
@@ -488,31 +519,32 @@ class MotionCorrection(Registration):
             p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
             r.save_txt(p, src, ref, convention)
 
-    def resolve(self, src, ref, length=1):
+    def resolve(self, src, ref, at_idx):
         """
-        Generator returning coordinate arrays that map from reference 
-        voxel coordinates into source voxel coordinates, including the 
-        transform itself.
+        Return a coordinate array and scale factor that maps reference voxels
+        into source voxels, including the transform. Uses cached values, if
+        available. 
 
         Args: 
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            length (int): number of arrays to yield (individual transforms 
-                within the overall series, in order)
+            at_idx (int): index number within series of transforms to apply
 
-        Yields: 
-            (np.ndarray, n x 3) coordinates on which to interpolate 
+        Returns: 
+            (np.ndarray, 1) coordinates on which to interpolate and identity 
+                scale factor
         """
         
         # Array of all voxel indices in the reference grid
         # Map them into world coordinates, apply the transform
         # and then into source voxel coordinates for the interpolation 
-        ijk = ref.ijk_grid('ij').reshape(-1, 3).T
-        for _, r2s in zip(range(length), self.ref2src_world):
-            ref2src_vox = (src.world2vox @ r2s @ ref.vox2world)
-            ijk = apply.aff_trans(ref2src_vox, ijk)
-            yield ijk 
+        ref2src_vox = (src.world2vox 
+                       @ self.ref2src_world[at_idx]
+                       @ ref.vox2world)
+        ijk = apply.aff_trans(ref2src_vox, self.cache).T
+        scale = 1
+        return ijk, scale
 
 class NonLinearRegistration(Transform):
     """
@@ -533,6 +565,7 @@ class NonLinearRegistration(Transform):
     def __init__(self, warp, src, ref, premat=np.eye(4), postmat=np.eye(4),
                  intensity_correct=False):
 
+        Transform.__init__(self)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         self.ref_spc = ref 
@@ -624,50 +657,63 @@ class NonLinearRegistration(Transform):
         """)
         return dedent(text)
 
-    def resolve(self, src, ref, length=1):
+    def prepare_cache(self, ref):
         """
-        Generator returning coordinate arrays that map from reference 
-        voxel coordinates into source voxel coordinates, including the 
-        transform itself.
+        Pre-compute and store the displacement field, including any postmats. 
+        This is because premats can be applied after calculating the field, 
+        but postmats must be included as part of that calculation. Note that
+        get_cache_value() return None, signifying that the field could not 
+        be cached (which implies a NLMC)
+
+        Args: 
+            ref (ImageSapce): the space in towards which the transform will
+                be applied 
+        """
+        self.cache = self.warp.get_cache_value(ref, self.postmat)
+        if self.cache is None: 
+            assert type(self) is NonLinearMotionCorrection
+
+    def resolve(self, src, ref, *unused):
+        """
+        Return a coordinate array and scale factor that maps reference voxels
+        into source voxels, including the transform. Uses cached values, if
+        available.  A scale factor of 1 will be returned if no intensity
+        correction was requested. 
 
         Args: 
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            length (int): number of arrays to yield (repeated copies, useful
-                for 4D data, default 1)
 
-        Yields: 
-            if intensity correction not set on self : 
-                (np.ndarray) n x 3, coordinates on which to interpolate 
-            if intensity correction set on self: 
-                (np.ndarray, np.array) tuple of arrays, sized (n,3) and (X,Y,Z)
-                    respectively. Coordinate arrays and Jacobian determinants 
-                    evaluated on the reference grid. 
+        Returns: 
+            (np.ndarray, np.ndarray/int) coordinates on which to interpolate, 
+                scaling factor to apply after interpolation 
         """
 
-        # Prepare the generator to yield displacement fields from the warp 
-        # Prepare the single overall transformation of premat and world/voxel
-        # matrices that is required for interpolation 
-        dfield = next(self.warp.get_displacements(ref, self.postmat, length))
         ref2src_vox = (src.world2vox 
                        @ self.premat.ref2src_world 
                        @ self.warp.src_spc.FSL2world)
-        ijk = apply.aff_trans(ref2src_vox, dfield).T
 
-        if self.intensity_correct: 
+        if self.cache is not None: 
+            ijk = apply.aff_trans(ref2src_vox, self.cache).T
+        else: 
+            raise RuntimeError("Should always be able to cache a NLR")
+
+        if not self.intensity_correct: 
+            scale = 1
+        else: 
 
             # Either a single warp, or intensity correction from both warps. 
             # Either way, calculate detJ on the overall final displacement field, which is
             # given by dfield (including any reqd postmats)
             if (type(self.warp) is not NonLinearProduct) or (self._intensity_correct == 3): 
-                scale = det_jacobian(dfield.reshape(*ref.size, 3), ref.vox_size)
+                scale = det_jacobian(self.cache.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on second warp. Just calculate the displacement field
             # for the second warp and the corresponding postmat. 
             elif self._intensity_correct == 2: 
-                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat)
-                scalar = det_jacobian(next(dfield2).reshape(*ref.size, 3), ref.vox_size)
+                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat, at_idx)
+                scale = det_jacobian(dfield2.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on first warp. Calculate the displacement field on 
             # the first warp. Then calculate the successor transform: the midmat, 
@@ -675,18 +721,13 @@ class NonLinearRegistration(Transform):
             # successor transform 
             else: 
                 assert self._intensity_correct == 1 
-                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity())
-                scalar = det_jacobian(next(dfield1).reshape(*ref.size, 3), ref.vox_size)
+                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity(), at_idx)
+                dj = det_jacobian(dfield1.reshape(*ref.size, 3), ref.vox_size)
                 successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
                     self.warp.warp2.ref_spc, premat=self.warp.midmat, postmat=self.postmat)
-                scale = successor.apply_to_array(scalar, ref, ref, cores=1, superlevel=1)
+                scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
 
-        for _ in range(length):
-            if not self.intensity_correct: 
-                yield ijk
-            else: 
-                yield ijk, scale 
-
+        return (ijk, scale)
 
 class NonLinearMotionCorrection(NonLinearRegistration):
     """
@@ -705,6 +746,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
     def __init__(self, warp, src, ref, premat, postmat, 
                  intensity_correct=0):
         
+        Transform.__init__(self)
         self.warp = warp
 
         if not isinstance(ref, ImageSpace):
@@ -757,67 +799,65 @@ class NonLinearMotionCorrection(NonLinearRegistration):
                 """
         return dedent(text)
 
-    def resolve(self, src, ref, length=1):
+    def resolve(self, src, ref, at_idx):
         """
-        Generator returning coordinate arrays that map from reference 
-        voxel coordinates into source voxel coordinates, including the 
-        transform itself.
+        Return a coordinate array and scale factor that maps reference voxels
+        into source voxels, including the transform. Uses cached values, if
+        available. A scale factor of 1 will be returned if no intensity
+        correction was requested. 
 
         Args: 
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            length (int): number of arrays to yield (individual transforms 
-                within the overall series, in order)
+            at_idx (int): index number within series of transforms to apply
 
-        Yields: 
-            if intensity correction not set on self : 
-                (np.ndarray) n x 3, coordinates on which to interpolate 
-            if intensity correction set on self: 
-                (np.ndarray, np.array) tuple of arrays, sized (n,3) and (X,Y,Z)
-                    respectively. Coordinate arrays and Jacobian determinants 
-                    evaluated on the reference grid. 
+        Returns: 
+            (np.ndarray, np.ndarray/int) coordinates on which to interpolate, 
+                scaling factor to apply after interpolation 
         """
 
-        # Prepare the generator to yield displacement fields from the warp 
-        dfields = self.warp.get_displacements(ref, self.postmat, length)
-        for idx, (pre, dfield) in enumerate(zip(self.premat.ref2src_world, 
-                                                    dfields)): 
+        if self.cache is not None: 
+            dfield = self.cache
+        else: 
+            dfield = self.warp.get_displacements(ref, self.postmat, at_idx)
 
-            # Prepare the single overall transformation of premat and
-            #  world/voxel matrices that is required for interpolation 
-            ref2src_vox = (src.world2vox @ pre @ self.warp.src_spc.FSL2world)
-            ijk = apply.aff_trans(ref2src_vox, dfield).T
+        # Prepare the single overall transformation of premat and
+        #  world/voxel matrices that is required for interpolation 
+        ref2src_vox = (src.world2vox 
+                        @ self.premat.ref2src_world[at_idx] 
+                        @ self.warp.src_spc.FSL2world)
+        ijk = apply.aff_trans(ref2src_vox, dfield).T
 
-            if self.intensity_correct: 
+        if not self.intensity_correct: 
+            scale = 1
 
-                # Either a single warp, or intensity correction from both warps. 
-                # Either way, calculate detJ on the overall final displacement field, which is
-                # given by dfield (including any reqd postmats)
-                if (type(self.warp) is not NonLinearProduct) or (self._intensity_correct == 3): 
-                    scale = det_jacobian(dfield.reshape(*ref.size, 3), ref.vox_size)
-                    yield ijk, scale 
+        else: 
 
-                # Intensity correct on second warp. Just calculate the displacement field
-                # for the second warp and the corresponding postmat. 
-                elif self._intensity_correct == 2: 
-                    dfield2 = self.warp.warp2.get_displacements(ref, self.postmat.transforms[idx])
-                    scalar = det_jacobian(next(dfield2).reshape(*ref.size, 3), ref.vox_size)
-                    yield ijk, scale  
+            # TODO: cache the intensity correction?
+            # Either a single warp, or intensity correction from both warps. 
+            # Either way, calculate detJ on the overall final displacement field, which is
+            # given by dfield (including any reqd postmats)
+            if (type(self.warp) is not NonLinearProduct) or (self._intensity_correct == 3): 
+                scale = det_jacobian(dfield.reshape(*ref.size, 3), ref.vox_size)
 
-                # Intensity correct on first warp. Calculate the displacement field on 
-                # the first warp. Then calculate the successor transform: the midmat, 
-                # the second warp, and the final postmat; and run the detJ through the 
-                # successor transform 
-                else: 
-                    assert self._intensity_correct == 1 
-                    dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity())
-                    scalar = det_jacobian(next(dfield1).reshape(*ref.size, 3), ref.vox_size)
-                    successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
-                        self.warp.warp2.ref_spc, premat=self.warp.midmat.transforms[idx], postmat=self.postmat.transforms[idx])
-                    scale = successor.apply_to_array(scalar, ref, ref, cores=1, superlevel=1)
-                    yield ijk, scale  
+            # Intensity correct on second warp. Just calculate the displacement field
+            # for the second warp and the corresponding postmat. 
+            elif self._intensity_correct == 2: 
+                df = self.warp.warp2.get_displacements(ref, self.postmat.transforms[at_idx])
+                scale = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
 
+            # Intensity correct on first warp. Calculate the displacement field on 
+            # the first warp. Then calculate the successor transform: the midmat, 
+            # the second warp, and the final postmat; and run the detJ through the 
+            # successor transform 
             else: 
-                yield ijk 
+                assert self._intensity_correct == 1 
+                df = self.warp.warp1.get_displacements(ref, Registration.identity())
+                dj = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
+                successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
+                    self.warp.warp2.ref_spc, premat=self.warp.midmat.transforms[at_idx], postmat=self.postmat.transforms[at_idx])
+                scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
+
+        return (ijk, scale)
        

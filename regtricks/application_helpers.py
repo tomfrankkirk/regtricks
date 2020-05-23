@@ -17,9 +17,6 @@ from scipy.ndimage import map_coordinates
 from .image_space import ImageSpace
 
 
-# TODO:     intensity correction 
-
-
 def src_load_helper(src):
     if isinstance(src, str):
         src = nibabel.load(src)
@@ -47,7 +44,7 @@ def _make_iterable(data):
         return data.reshape(1, *data.shape)
 
 
-def interpolate_and_scale(data, coords_scale, out_size, **kwargs):
+def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
     """
     Used for partial function application to share interpolation jobs
     amongst workers of a mp.Pool(). Interpolate data onto the coordinates
@@ -66,8 +63,9 @@ def interpolate_and_scale(data, coords_scale, out_size, **kwargs):
        (np.ndarray), sized as out_size, interpolated output 
     """
 
-    interp = map_coordinates(data, coords_scale[0], **kwargs)
-    return interp.reshape(out_size) * coords_scale[1] 
+    ijk, scale = transform.resolve(src_spc, ref_spc, idx)
+    interp = map_coordinates(data, ijk, **kwargs)
+    return interp.reshape(ref_spc.size) * scale 
 
 
 def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
@@ -94,28 +92,16 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     if len(transform) > 1 and (len(transform) != data.shape[-1]): 
         raise RuntimeError("Number of volumes in data does not match transform")
 
-    # Prepare data for iterating, prepare worker function for each core 
-    # Resolve the transform: this means that for each volume of the series, 
-    # we have a corresponding array of coordinates onto which we need to 
-    # iterpolate the date. Note that this is a backwards transform: we 
-    # map the REFERENCE voxels into the SOURCE space and do the interpolation
-    # there
+    # Make the data 4D so that the workers of the pool can iterate over it 
+    # Each worker recieves a tuple of (vol, idx), one frame of the series and
+    # its corresponding index number (which is used to get the correct bit
+    # of the transform). Pre-calculate and cache any information that can be 
+    # shared amongst the workers 
     data = _make_iterable(data)
-    worker = functools.partial(interpolate_and_scale, out_size=ref_spc.size, **kwargs)
-
-    # If intensity correction has been requested on a NL transform, then resolve
-    # will return tuples of (coordinates, scale factors). Pass these on as they
-    # are
-    if (transform.is_nonlinear and transform.intensity_correct): 
-        coords_scales = transform.resolve(src_spc, ref_spc, data.shape[0])
-        worker_args = zip(data, coords_scales)
-    
-    # If intensity correction has not been requested on a NL transform, then 
-    # resolve returns array of coordinates only. In which case, zip them up
-    # into tuples (coordinates, 1), used as a dummy scale factor 
-    else: 
-        coords = transform.resolve(src_spc, ref_spc, data.shape[0])
-        worker_args = zip(data, zip(coords, itertools.repeat(1)))
+    transform.prepare_cache(ref_spc)
+    worker_args = zip(range(data.shape[0]), data)
+    worker = functools.partial(interpolate_and_scale, 
+        transform=transform, ref_spc=ref_spc, src_spc=src_spc, **kwargs)
 
     # Distribute amongst workers 
     if cores == 1:  
@@ -126,6 +112,8 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
 
     # Stack all the individual volumes back up in time dimension 
     # Clip the array to the original min/max values 
+    # Reset the cache on the transform to be safe. 
+    transform.reset_cache()
     resamp = np.stack(resamp, axis=3)
     return np.clip(np.squeeze(resamp), data.min(), data.max()) 
 
