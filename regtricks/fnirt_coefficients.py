@@ -42,10 +42,10 @@ class FNIRTCoefficients(object):
 
         # If we have series of postmats, check if they are all identitical
         if len(postmat) > 1: 
-            same1 = all([ np.allclose(postmat.src2ref_world[0], m) 
-                          for m in postmat.src2ref_world ])
+            same1 = all([ np.allclose(postmat.src2ref[0], m) 
+                          for m in postmat.src2ref ])
             if same1: 
-                pmat = postmat.transforms[0].to_fsl(self.ref_spc, ref)
+                pmat = postmat[0].to_fsl(self.ref_spc, ref)
         else: 
             same1 = True 
             pmat = postmat.to_fsl(self.ref_spc, ref)
@@ -82,19 +82,19 @@ class NonLinearProduct(object):
 
         # If we have series of mid and postmats, check if they are all identitical
         if len(postmat) > 1: 
-            same1 = all([ np.allclose(postmat.src2ref_world[0], m) 
-                          for m in postmat.src2ref_world ])
+            same1 = all([ np.allclose(postmat.src2ref[0], m) 
+                          for m in postmat.src2ref ])
             if same1: 
-                pmat = postmat.transforms[0].to_fsl(self.warp2.ref_spc, ref)
+                pmat = postmat[0].to_fsl(self.warp2.ref_spc, ref)
         else: 
             same1 = True 
             pmat = postmat.to_fsl(self.warp2.ref_spc, ref)
 
         if len(self.midmat) > 1: 
-            same2 = all([ np.allclose(self.midmat.src2ref_world[0], m) 
-                          for m in self.midmat.src2ref_world ])
+            same2 = all([ np.allclose(self.midmat.src2ref[0], m) 
+                          for m in self.midmat.src2ref ])
             if same2: 
-                mmat = self.midmat.transforms[0].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+                mmat = self.midmat[0].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
 
         else: 
             same2 = True 
@@ -114,8 +114,8 @@ class NonLinearProduct(object):
             return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
 
         elif at_idx < len(self):
-            mid = self.warp.midmat.transforms[at_idx].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
-            post = postmat.transforms[at_idx].to_fsl(self.warp2.ref_spc, ref)
+            mid = self.warp.midmat[at_idx].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+            post = postmat[at_idx].to_fsl(self.warp2.ref_spc, ref)
             return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
 
         else: 

@@ -456,6 +456,10 @@ class MotionCorrection(Registration):
                                  {t.src2ref_world[3,:]}""")
         return dedent(text)
 
+    def __getitem__(self, idx):
+        """Access individual Registration objects from within series"""
+        return self.__transforms[idx]
+
     @classmethod
     def identity(cls, length):
         return MotionCorrection([Registration.identity()] * length)
@@ -467,7 +471,7 @@ class MotionCorrection(Registration):
         n times (eg, 10 copies of a single transform)
         """
 
-        return MotionCorrection([reg.src2ref_world] * length,
+        return MotionCorrection([reg.src2ref] * length,
                                  reg.src_spc, reg.ref_spc, "world")
 
     @property 
@@ -844,7 +848,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             # Intensity correct on second warp. Just calculate the displacement field
             # for the second warp and the corresponding postmat. 
             elif self._intensity_correct == 2: 
-                df = self.warp.warp2.get_displacements(ref, self.postmat.transforms[at_idx])
+                df = self.warp.warp2.get_displacements(ref, self.postmat[at_idx])
                 scale = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on first warp. Calculate the displacement field on 
@@ -856,7 +860,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
                 df = self.warp.warp1.get_displacements(ref, Registration.identity())
                 dj = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
                 successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
-                    self.warp.warp2.ref_spc, premat=self.warp.midmat.transforms[at_idx], postmat=self.postmat.transforms[at_idx])
+                    self.warp.warp2.ref_spc, premat=self.warp.midmat[at_idx], postmat=self.postmat[at_idx])
                 scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
 
         return (ijk, scale)
