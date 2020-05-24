@@ -39,6 +39,16 @@ class FNIRTCoefficients(object):
         self.src_spc = src 
 
     def get_cache_value(self, ref, postmat):
+        """
+        Return cacheable values, if possible, else return None. 
+
+        When can we cache? If there are only one midmat/postmat, or all of the 
+        midmats and postmats are actually the same (due to series expansion 
+        required to match the size of the premats), then we can compute and  
+        cache displacement field as it will be the same for all workers. 
+        If not, then we cannot cache and all workes must compute a new 
+        displacement field for each mid/post pair 
+        """
 
         # If we have series of postmats, check if they are all identitical
         if len(postmat) > 1: 
@@ -61,6 +71,17 @@ class FNIRTCoefficients(object):
 
 
 class NonLinearProduct(object):
+    """
+    Lazy evaluation of the combination of two non-linear warps. The two warps
+    are stored separately as FNIRTCoefficients objects, and combined into a
+    single field via convertwarp when resolve() is called. 
+
+    Args: 
+        first (FNIRTCoefficients): first warp 
+        first_post (Registration/MotionCorrection): after first warp transform
+        second_pre (Registration/MotionCorrection): before second warp transform
+        second (FNIRTCoefficients): second warp 
+    """
 
     def __init__(self, first, first_post, second_pre, second):
         
@@ -70,13 +91,22 @@ class NonLinearProduct(object):
 
         self.warp1 = first
         self.warp2 = second
-
         self.src_spc = first.src_spc 
         self.ref_spc = second.ref_spc 
-        
         self.midmat = second_pre @ first_post
 
     def get_cache_value(self, ref, postmat):
+        """
+        Return cacheable values, if possible, else return None. 
+
+        When can we cache? If there are only one midmat/postmat, or all of the 
+        midmats and postmats are actually the same (due to series expansion 
+        required to match the size of the premats), then we can compute and  
+        cache displacement field as it will be the same for all workers. 
+        If not, then we cannot cache and all workes must compute a new 
+        displacement field for each mid/post pair 
+        """
+
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
 
@@ -125,8 +155,26 @@ class NonLinearProduct(object):
 
 
 def get_field(coeff1, ref, coeff2=None, mid=None, post=None):
+    """
+    Resolve coefficients into displacement field via convertwarp. 
 
-    # TODO: enforce type checks here. 
+    Args: 
+        coeff1 (FNIRTCoefficients): first warp 
+        ref (ImageSpace): reference grid for output 
+        coeff2 (FNIRTCoefficients): optional, second warp 
+        mid (np.ndarray): optional, between-warp affine matrix 
+        post (np.ndarray): optional, after-warp affine matrix 
+
+    Returns: 
+        np.ndarray, shape Nx3, arranged by voxel index down the rows and 
+            XYZ in columns. Row M in the array gives the position of the 
+            reference voxel with linear index M in the *source* voxel grid
+            of warp1, *in FSL coordinates*. 
+    """
+
+    assert isinstance(mid, np.ndarray), 'Should be np.array in FSL convention'
+    assert isinstance(post, np.ndarray), 'Should be np.array in FSL convention'
+
     with tempfile.TemporaryDirectory() as d: 
         w1 = op.join(d, 'w1.nii.gz')
         nibabel.save(coeff1, w1)
