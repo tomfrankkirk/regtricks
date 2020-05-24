@@ -11,10 +11,6 @@ from fsl.data.image import Image as FSLImage
 
 from . import Registration, MotionCorrection, NonLinearRegistration
 
-# TODO: incorporate FNIRT, remove the output options 
-# just check for omat argument, if not there then pipe it into
-# temp directory and read it out. let normal args pass through 
-
 def flirt(src, ref, **kwargs):
     """
     FLIRT registration wrapper. If any of the output arguments are given
