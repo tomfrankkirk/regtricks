@@ -1,32 +1,64 @@
+"""
+Functions for combining Transformations
+"""
+
+# Lots of relative imports within functions here to avoid circular 
+# imports 
 from collections import defaultdict
 import copy 
 
 import numpy as np 
 
-# TODO: doc this 
-
 
 def get_highest_type(first, second):
+    """
+    When combining two arbitrary transforms, the output will be of the same 
+    type as the "highest" of the two arguments (this is the "type promotion"). 
+    This function returns the highest type of two input objects, according to:
+
+    Registration                    LOWEST
+    MotionCorrection
+    NonLinearReigstration
+    NonLinearMotionCorrection       HIGHEST 
+
+    Once the higest type is known, the actual multiplication is handled by
+    that class' invididual method, as below in this submodule
+
+    Args: 
+        first (transformation): order doesn't matter
+        second (transformation): order doesn't matter
+
+    Returns: 
+        type object of the highest class 
+    """
+
     from .regtricks import (Registration, MotionCorrection,
             NonLinearMotionCorrection, NonLinearRegistration)
 
-    _TYPE_MAP = defaultdict(int)
-    _TYPE_MAP.update({
+    TYPE_MAP = ({
         Registration: 1, 
         MotionCorrection: 2, 
         NonLinearRegistration: 3, 
         NonLinearMotionCorrection: 4
     })
 
-    type1 = _TYPE_MAP[type(first)]
-    type2 = _TYPE_MAP[type(second)]
-    if type1 >= type2: 
-        return type(first)
-    else: 
-        return type(second)
+    try: 
+        type1 = TYPE_MAP[type(first)]
+        type2 = TYPE_MAP[type(second)]
+        if type1 >= type2: 
+            return type(first)
+        else: 
+            return type(second)
+
+    except Exception as e: 
+        raise ValueError("At least one input was not a Transform")
     
 
 def registration(lhs, rhs):
+    """
+    Combine two Registrations, return a Registration. 
+    """
+
     from .regtricks import Registration
 
     # lhs   rhs 
@@ -41,6 +73,11 @@ def registration(lhs, rhs):
 
 
 def moco(lhs, rhs):
+    """
+    Combine either a Registration and MoCo, or two MoCos. 
+    Return a MotionCorrection. 
+    """
+
     from .regtricks import MotionCorrection, Registration
 
     # lhs   rhs 
@@ -65,6 +102,12 @@ def moco(lhs, rhs):
     return MotionCorrection(overall)
 
 def nonlinearreg(lhs, rhs):
+    """
+    Combine either a Registration and NLR, a MoCo and NLR, or two NLRs.
+    Note at most 2 non-linear transforms can be combined. 
+    Return a NonLinearRegistration. 
+    """
+
     from .regtricks import (NonLinearRegistration, NonLinearProduct,
                             Registration, MotionCorrection, 
                             NonLinearMotionCorrection)
@@ -118,6 +161,12 @@ def nonlinearreg(lhs, rhs):
         
 
 def nonlinearmoco(lhs, rhs):
+    """
+    Combine either a Registration and NLMC, a MoCo and NLMC, a NLR and NLMC, 
+    or two NLMCs. Note at most 2 non-linear transforms can be combined. 
+    Return a NonLinearMotionCorrection. 
+    """
+
     from .regtricks import (NonLinearRegistration, NonLinearProduct, 
                             Registration, NonLinearMotionCorrection)
 
@@ -156,16 +205,18 @@ def nonlinearmoco(lhs, rhs):
 
 def chain(*args):
     """ 
-    Concatenate a series of registrations.
+    Concatenate a series of transformations (Registration, MotionCorrection, 
+    NonLinearRegistration). Note that intensity correction should be enabled 
+    when creating a NonLinearRegistration object using intensity_correct=True
+    in the constructor prior to using chain(). 
 
     Args: 
-        *args: Registration objects, given in the order that they need to be 
+        *args: Transform objects, given in the order that they need to be 
             applied (eg, for A -> B -> C, give them in that order and they 
             will be multiplied as C @ B @ A)
 
     Returns: 
-        Registration object, with the first registration's source 
-        and the last's reference (if these are not None)
+        Transform object representing the complete transformation 
     """
 
     from .regtricks import Transform
@@ -191,10 +242,13 @@ def chain(*args):
 def cast_potential_array(arr):
     """Helper to convert 4x4 arrays to Registrations if not already"""
 
-    from .regtricks import Registration
+    from .regtricks import Registration, Transform
 
     if type(arr) is np.ndarray: 
         assert arr.shape == (4,4)
         arr = copy.deepcopy(arr)
         arr = Registration(arr)
+    else: 
+        if not isinstance(arr, Transform):
+            raise ValueError("Not a Transform nor array")
     return arr
