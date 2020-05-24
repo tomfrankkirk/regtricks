@@ -187,13 +187,10 @@ class Transform(object):
 
 class Registration(Transform):
     """
-    Represents a transformation between the source image and reference.
-    If src and ref are given, the transformation is assumed to be in 
-    FLIRT/FSL convention, otherwise it is assumed to be in world convention.
+    Affine (4x4) transformation between two images.
 
     Args: 
-        src2ref: either a 4x4 np.array representing affine transformation
-            from source to reference, or a path to a text-like file 
+        src2ref (str/np.ndarray): path to text-like file to load or np.ndarray
     """
 
     def __init__(self, src2ref):
@@ -211,7 +208,18 @@ class Registration(Transform):
 
     @classmethod
     def from_flirt(cls, src2ref, src, ref):
-        """TODO: doc me"""
+        """
+        Load an affine (4x4) transformation between two images directly from 
+        FLIRT's -omat output. 
+
+        Args: 
+            src2ref (str/np.ndarray): path to text-like file to load or np.ndarray
+            src: the source of the transform 
+            ref: the reference (or target) of the transform 
+
+        Returns: 
+            Registration object
+        """
 
         if isinstance(src2ref, str): 
             src2ref = np.loadtxt(src2ref)
@@ -279,34 +287,6 @@ class Registration(Transform):
         """Save as textfile at path"""
         np.savetxt(path, self.src2ref)
 
-    def apply_to_grid(self, src):
-        # TODO: move this onto the image space class 
-        """
-        Apply registration to the voxel grid of an image, retaining original
-        voxel data (no resampling). This is equivalent to shifting the image
-        within world space but not altering the contents of the image itself.
-
-        Args: 
-            src: str, nibabel Nifti/MGH or FSL Image to apply transform
-        
-        Returns: 
-            image object, of same type as source. 
-        """
-
-        data, create = apply.src_load_helper(src)
-        src_spc = ImageSpace(src)
-        new_spc = src_spc.transform(self.src2ref)
-               
-        if create is MGHImage:
-            ret = MGHImage(data, new_spc.vox2world, new_spc.header)
-            return ret 
-        else: 
-            ret = Nifti2Image(data, new_spc.vox2world, new_spc.header)
-            if create is FSLImage:
-                return FSLImage(ret)
-            else: 
-                return ret 
-
     def prepare_cache(self, ref):
         """
         Cache re-useable data before interpolate_and_scale. Just the voxel
@@ -343,11 +323,7 @@ class Registration(Transform):
 class MotionCorrection(Registration):
     """
     A sequence of Registration objects, one for each volume in a timeseries. 
-    For within-series motion correction (not using an external reference), 
-    src and ref will refer to the same target. If only the src is given, then
-    ref is assumed to be the same as src (ie, within-series), with FSL 
-    convention. 
-
+    
     Args: 
         mats: a path to a directory containing transformation matrices, in
             name order (all files will be loaded), or a list of individual
@@ -375,7 +351,21 @@ class MotionCorrection(Registration):
 
     @classmethod
     def from_mcflirt(cls, mats, src, ref):
-        """TODO: doc me"""
+        """
+        Load a MotionCorrection object directly from MCFLIRT's -omat directory. 
+        Note that for within-timeseries registration, the src and ref arguments
+        should take the same value. 
+
+        Args: 
+            mats: a path to a directory containing transformation matrices, in
+                name order (all files will be loaded), or a list of individual
+                filenames, or a list of np.arrays 
+            src: source of the transforms (ie, the image being corrected)
+            ref: the target of the transforms (normally same as src)
+
+        Returns: 
+            MotionCorrection 
+        """
 
         if isinstance(mats, str):
             mats = sorted(glob.glob(op.join(mats, '*')))
@@ -579,7 +569,6 @@ class NonLinearRegistration(Transform):
         """Iverse warpfield, via FSL invwarp"""
 
         # TODO: lazy evaluation of this? And move into FNIRT coeffs somehow 
-
         with tempfile.TemporaryDirectory() as d:
             oldcoeffs = op.join(d, 'oldcoeffs.nii.gz')
             newcoeffs = op.join(d, 'newcoeffs.nii.gz')
