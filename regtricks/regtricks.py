@@ -18,11 +18,8 @@ from . import application_helpers as apply
 from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct, det_jacobian
 from . import multiplication as multiply
 
-# TODO: remove src/ref from transforms
-# remove "assuming FSL convention..."
-# allow for [] indexing of motion corrections 
 # cache for intensity correction?
-
+# cast_space method 
 
 class Transform(object):
     """
@@ -41,24 +38,6 @@ class Transform(object):
         self._cache = None 
 
     @property
-    def src_header(self):
-        """Nibabel header for the original source image, if present"""
-
-        if self.src_spc is not None: 
-            return self.src_spc.header 
-        else: 
-            return None 
-
-    @property
-    def ref_header(self):
-        """Nibabel header for the original header image, if present"""
-
-        if self.ref_spc is not None: 
-            return self.ref_spc.header 
-        else: 
-            return None 
-
-    @property
     def is_linear(self):
         return (type(self) in [Registration, MotionCorrection])
 
@@ -70,13 +49,6 @@ class Transform(object):
         """Save transformation at path in X5 format (experimental)"""
 
         x5.save_manager(self, path)
-
-    def inverse(self):
-        """NB NonLinear classes explicitly override this"""
-
-        constructor = type(self)
-        return constructor(self.ref2src_world, src=self.ref_spc, 
-                           ref=self.src_spc, convention='world')
 
     def __repr__(self):
         raise NotImplementedError()
@@ -222,95 +194,69 @@ class Registration(Transform):
     Args: 
         src2ref: either a 4x4 np.array representing affine transformation
             from source to reference, or a path to a text-like file 
-        src: (optional) either the path to the source image, or an ImageSpace
-            object initialised with the source 
-        ref: (optional) either the path to the reference image, or an 
-            ImageSpace object initialised with the referende 
-        convention: (optional) either "world" (assumed if src/ref not given),
-            or "fsl" (assumed if src/ref given)
     """
 
-    def __init__(self, src2ref, src=None, ref=None, convention=""):
+    def __init__(self, src2ref):
         Transform.__init__(self)
 
         if isinstance(src2ref, str): 
             src2ref = np.loadtxt(src2ref)
 
         if (src2ref.shape != (4,4) 
-                or (np.abs(src2ref[3,:] - [0,0,0,1]) > 1e-9).any()):
+            or (np.abs(src2ref[3,:] - [0,0,0,1]) > 1e-9).any()):
             raise RuntimeError("src2ref must be a 4x4 affine matrix, where ",
                                "the last row is [0,0,0,1].")
 
-        if (src is not None) and (ref is not None):  
-            if not isinstance(src, ImageSpace):
-                src = ImageSpace(src)
-            self.src_spc = src 
-            if not isinstance(ref, ImageSpace):
-                ref = ImageSpace(ref)
-            self.ref_spc = ref 
+        self.__src2ref = src2ref
 
-            if convention == "":
-                print("Assuming FSL convention")
-                convention = "fsl"
+    @classmethod
+    def from_flirt(cls, src2ref, src, ref):
+        """TODO: doc me"""
 
-        else: 
-            self.src_spc = None
-            self.ref_spc = None 
-            if convention == "":
-                print("Assuming world convention")
-                convention = "world"
+        if isinstance(src2ref, str): 
+            src2ref = np.loadtxt(src2ref)
 
-        if convention.lower() == "fsl":
-            src2ref_world = (self.ref_spc.FSL2world 
-                             @ src2ref @ self.src_spc.world2FSL)
+        if not isinstance(src, ImageSpace):
+            src = ImageSpace(src)
+        src_spc = src 
+        if not isinstance(ref, ImageSpace):
+            ref = ImageSpace(ref)
+        ref_spc = ref 
 
-        elif convention.lower() == "world":
-            src2ref_world = src2ref 
-
-        else: 
-            raise RuntimeError("Unrecognised convention")
-
-        self.__src2ref_world = src2ref_world
+        src2ref = (ref_spc.FSL2world @ src2ref @ src_spc.world2FSL)
+        return Registration(src2ref)
 
     def __len__(self):
         return 1 
 
     def __repr__(self):
-        s = self._repr_helper(self.src_spc)
-        r = self._repr_helper(self.ref_spc)
         
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
             text = (f"""\
                 Registration (linear) with properties:
-                source:        {s}, 
-                reference:     {r}, 
-                src2ref_world: {self.src2ref_world[0,:]}
-                               {self.src2ref_world[1,:]}
-                               {self.src2ref_world[2,:]}
-                               {self.src2ref_world[3,:]}""")
+                src2ref:       {self.src2ref[0,:]}
+                               {self.src2ref[1,:]}
+                               {self.src2ref[2,:]}
+                               {self.src2ref[3,:]}""")
         return dedent(text)
-
-    def _repr_helper(self, spc):
-        if not spc: 
-            return "(none defined)"
-        elif spc.file_name: 
-            return self.spc.file_name
-        else:  
-            return "ImageSpace object"
-
     
     @property
-    def ref2src_world(self):
-        return np.linalg.inv(self.__src2ref_world)
+    def ref2src(self):
+        return np.linalg.inv(self.__src2ref)
 
     @property
-    def src2ref_world(self):
-        return self.__src2ref_world
+    def src2ref(self):
+        return self.__src2ref
 
     @classmethod
-    def identity(cls, src=None, ref=None):
-        return Registration(np.eye(4), src, ref, convention="world")
+    def identity(cls):
+        return Registration(np.eye(4))
+
+    def inverse(self):
+        """Self inverse"""
+        constructor = type(self)
+        return constructor(self.ref2src)
 
     def to_fsl(self, src, ref):
         """
@@ -323,11 +269,15 @@ class Registration(Transform):
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
 
-        return ref.world2FSL @ self.src2ref_world @ src.FSL2world
+        return ref.world2FSL @ self.src2ref @ src.FSL2world
+
+    def to_flirt(self, src, ref):
+        """Alias for self.to_fsl()"""
+        return self.to_fsl(src, ref)
 
     def save_txt(self, path):
         """Save as textfile at path"""
-        np.savetxt(path, self.src2ref_world)
+        np.savetxt(path, self.src2ref)
 
     def apply_to_grid(self, src):
         # TODO: move this onto the image space class 
@@ -345,7 +295,7 @@ class Registration(Transform):
 
         data, create = apply.src_load_helper(src)
         src_spc = ImageSpace(src)
-        new_spc = src_spc.transform(self.src2ref_world)
+        new_spc = src_spc.transform(self.src2ref)
                
         if create is MGHImage:
             ret = MGHImage(data, new_spc.vox2world, new_spc.header)
@@ -384,7 +334,7 @@ class Registration(Transform):
         # Array of all voxel indices in the reference grid
         # Map them into world coordinates, apply the transform
         # and then into source voxel coordinates for the interpolation 
-        ref2src_vox = (src.world2vox @ self.ref2src_world @ ref.vox2world)
+        ref2src_vox = (src.world2vox @ self.ref2src @ ref.vox2world)
         ijk = apply.aff_trans(ref2src_vox, self.cache).T
         scale = 1 
         return (ijk, scale)
@@ -402,58 +352,64 @@ class MotionCorrection(Registration):
         mats: a path to a directory containing transformation matrices, in
             name order (all files will be loaded), or a list of individual
             filenames, or a list of np.arrays 
-        src: (optional) either the path to the source image, or an ImageSpace
-            object representing the source 
-        ref: (optional) either the path to the reference image, or an Image
-            Space representing the source (NB this is usually the same as 
-            the src image)
-        convention: (optional) the convention used for each transformation
-            (if src and ref are given, 'fsl' is assumed, otherwise 'world')
     """
 
-    def __init__(self, mats, src=None, ref=None, convention=None):
+    def __init__(self, mats):
         Transform.__init__(self)
 
         if isinstance(mats, str):
             mats = sorted(glob.glob(op.join(mats, '*')))
             if not mats: 
                 raise RuntimeError("Did not find any matrices in %s" % mats)
-
-        if not convention: 
-            if (src is not None):
-                print("Assuming FSL convention")
-                convention = "fsl"
-            else: 
-                print("Assuming world convention")
-                convention = "world"
             
         self.__transforms = []
         for mat in mats:
             if isinstance(mat, (np.ndarray, str)): 
-                m = Registration(mat, src, ref, convention)
+                m = Registration(mat)
             else: 
                 m = mat 
             self.__transforms.append(m)
+
+    def from_flirt(self, *args):
+        raise NotImplementedError("Use the MotionCorrection.from_mcflirt() method")
+
+    @classmethod
+    def from_mcflirt(cls, mats, src, ref):
+        """TODO: doc me"""
+
+        if isinstance(mats, str):
+            mats = sorted(glob.glob(op.join(mats, '*')))
+            if not mats: 
+                raise RuntimeError("Did not find any matrices in %s" % mats)
+
+        if isinstance(mats, np.ndarray):
+            if mats.ndim == 3: 
+                if not mats.shape[:2] ==(4,4): 
+                    raise ValueError("A 3D stack of matrices should have size "
+                            "(4,4) in first two dimensions")
+            if mats.ndim == 2: 
+                if ((mats.shape[0] % 4) or (mats.shape[1] != 4)): 
+                    raise ValueError("A 2D array should have size Nx4, "
+                        "where N is divisible by 4") 
+                mats = [ mats[4*m : 4*(m+1),:] for m in range(mats.shape[0] // 4) ]
+                    
+        return MotionCorrection([ Registration.from_flirt(m, src, ref) for m in mats ])
 
     def __len__(self):
         return len(self.transforms)
 
     def __repr__(self):
-        t = self.transforms[0]
-        s = self._repr_helper(self.src_spc)
-        r = self._repr_helper(self.ref_spc)
+        t = self[0]
 
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
             text = (f"""\
                 MotionCorrection (linear) with properties:
-                source:          {s}, 
-                reference:       {r}, 
                 series length:   {len(self)}
-                src2ref_world_0: {t.src2ref_world[0,:]}
-                                 {t.src2ref_world[1,:]}
-                                 {t.src2ref_world[2,:]}
-                                 {t.src2ref_world[3,:]}""")
+                src2ref_0:       {t.src2ref[0,:]}
+                                 {t.src2ref[1,:]}
+                                 {t.src2ref[2,:]}
+                                 {t.src2ref[3,:]}""")
         return dedent(text)
 
     def __getitem__(self, idx):
@@ -471,8 +427,7 @@ class MotionCorrection(Registration):
         n times (eg, 10 copies of a single transform)
         """
 
-        return MotionCorrection([reg.src2ref] * length,
-                                 reg.src_spc, reg.ref_spc, "world")
+        return MotionCorrection([reg.src2ref] * length)
 
     @property 
     def transforms(self):
@@ -480,24 +435,14 @@ class MotionCorrection(Registration):
         return self.__transforms
 
     @property 
-    def src2ref_world(self):
+    def src2ref(self):
         """List of src to ref transformation matrices"""
-        return [ t.src2ref_world for t in self.transforms ]
+        return [ t.src2ref for t in self.transforms ]
 
     @property
-    def ref2src_world(self):
+    def ref2src(self):
         """List of ref to src transformation matrices"""
-        return [ t.ref2src_world for t in self.transforms ]
-
-    @property
-    def src_spc(self):
-        """ImageSpace for source of transform"""
-        return self.transforms[0].src_spc 
-
-    @property
-    def ref_spc(self):
-        """ImageSpace for reference of transform"""
-        return self.transforms[0].ref_spc
+        return [ t.ref2src for t in self.transforms ]
 
     def to_fsl(self, src, ref):
         """Transformation matrices in FSL terms"""
@@ -544,7 +489,7 @@ class MotionCorrection(Registration):
         # Map them into world coordinates, apply the transform
         # and then into source voxel coordinates for the interpolation 
         ref2src_vox = (src.world2vox 
-                       @ self.ref2src_world[at_idx]
+                       @ self.ref2src[at_idx]
                        @ ref.vox2world)
         ijk = apply.aff_trans(ref2src_vox, self.cache).T
         scale = 1
@@ -566,30 +511,37 @@ class NonLinearRegistration(Transform):
             of this warp (when self.apply_to*() is called)
     """
 
-    def __init__(self, warp, src, ref, premat=np.eye(4), postmat=np.eye(4),
-                 intensity_correct=False):
+    def __init__(self, warp, src, ref, intensity_correct=False):
 
-        Transform.__init__(self)
-        if not isinstance(ref, ImageSpace):
-            ref = ImageSpace(ref)
-        self.ref_spc = ref 
+        raise NotImplementedError("Currently only FNIRT supported, use "
+                                "NonLinearRegistration.from_fnirt() instead")
 
-        if not isinstance(src, ImageSpace):
-            src = ImageSpace(src)
-        self.src_spc = src 
+        # Transform.__init__(self)
+        # self.warp = FNIRTCoefficients(warp, src, ref)
+        # self._intensity_correct = int(intensity_correct)
 
-        self.premat = Registration.identity()
-        self.postmat = Registration.identity()
-        self.warp = FNIRTCoefficients(warp, src, ref)
+    @classmethod
+    def from_fnirt(cls, coefficients, src, ref, intensity_correct=False):
+        """
+        FNIRT non-linear registration from a coefficients file. If a pre-warp
+        and post-warp transformation need to be applied, create these as 
+        separate Registration objects and combine them via chain, ie, 
+        combined = chain(pre, non-linear, post)
 
-        # We store intensity correction as an integer private variable,
-        # as it can take the values 0,1,2,3 (this includes NonLinearMC subclass)
-        # 0: no intensity correction
-        # 1: intensity correction, or if the warp is a NonLinearProduct, then
-        #       intensity correct the FIRST warp 
-        # 2: intensity correct the second warp of a NLP 
-        # 3: intensity correct both warps of a NLP  
-        self._intensity_correct = int(intensity_correct)
+        Args: 
+            coefficients (str/nibabel NIFTI): FNIRT coefficients 
+            src (str/ImageSpace): the source of the warp 
+            ref (str/ImageSpace): the reference of the warp 
+            intensity_correct (bool): whether to apply intensity correction via
+                the determinant of the warp's Jacobian (default false)
+
+        Returns: 
+            NonLinearRegistration object 
+        """
+
+        warp = FNIRTCoefficients(coefficients, src, ref)
+        return NonLinearRegistration._manual_construct(warp, 
+            np.eye(4), np.eye(4), intensity_correct)
 
     @property
     def intensity_correct(self):
@@ -603,23 +555,30 @@ class NonLinearRegistration(Transform):
         return 1
 
     @classmethod
-    def _manual_construct(cls, warp, src, ref, premat, postmat, 
+    def _manual_construct(cls, warp, premat, postmat, 
                           intensity_correct=False):
-        """Manual constructor, to be used from __matmul__ and __rmatmul__"""
+        """Manual constructor, do not use from outside regtricks"""
+
+        # # We store intensity correction as an integer private variable,
+        # # as it can take the values 0,1,2,3 (this includes NonLinearMC subclass)
+        # # 0: no intensity correction
+        # # 1: intensity correction, or if the warp is a NonLinearProduct, then
+        # #       intensity correct the FIRST warp 
+        # # 2: intensity correct the second warp of a NLP 
+        # # 3: intensity correct both warps of a NLP  
         
         x = cls.__new__(cls)
+        assert isinstance(warp, (FNIRTCoefficients, NonLinearProduct))
         x.warp = warp
-        x.src_spc = src 
-        x.ref_spc = ref 
-        x.premat = premat 
-        x.postmat = postmat 
+        x.premat = multiply.cast_potential_array(premat)
+        x.postmat = multiply.cast_potential_array(postmat) 
         x.intensity_correct = int(intensity_correct)
         return x 
 
     def inverse(self):
         """Iverse warpfield, via FSL invwarp"""
 
-        # TODO: lazy evaluation of this?
+        # TODO: lazy evaluation of this? And move into FNIRT coeffs somehow 
 
         with tempfile.TemporaryDirectory() as d:
             oldcoeffs = op.join(d, 'oldcoeffs.nii.gz')
@@ -695,7 +654,7 @@ class NonLinearRegistration(Transform):
         """
 
         ref2src_vox = (src.world2vox 
-                       @ self.premat.ref2src_world 
+                       @ self.premat.ref2src 
                        @ self.warp.src_spc.FSL2world)
 
         if self.cache is not None: 
@@ -716,7 +675,7 @@ class NonLinearRegistration(Transform):
             # Intensity correct on second warp. Just calculate the displacement field
             # for the second warp and the corresponding postmat. 
             elif self._intensity_correct == 2: 
-                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat, at_idx)
+                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat, 0)
                 scale = det_jacobian(dfield2.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on first warp. Calculate the displacement field on 
@@ -725,7 +684,7 @@ class NonLinearRegistration(Transform):
             # successor transform 
             else: 
                 assert self._intensity_correct == 1 
-                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity(), at_idx)
+                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity(), 0)
                 dj = det_jacobian(dfield1.reshape(*ref.size, 3), ref.vox_size)
                 successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
                     self.warp.warp2.ref_spc, premat=self.warp.midmat, postmat=self.postmat)
@@ -753,14 +712,6 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         Transform.__init__(self)
         self.warp = warp
 
-        if not isinstance(ref, ImageSpace):
-            ref = ImageSpace(ref)
-        self.ref_spc = ref 
-
-        if not isinstance(src, ImageSpace):
-            src = ImageSpace(src)
-        self.src_spc = src 
-
         assert (isinstance(premat, (Registration, np.ndarray)) 
                 or isinstance(postmat, (Registration, np.ndarray)))
 
@@ -785,8 +736,8 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             else: 
                 raise ValueError("Different length pre/midmats")
 
-        self.premat = premat 
-        self.postmat = postmat 
+        self.premat = multiply.cast_potential_array(premat)
+        self.postmat = multiply.cast_potential_array(postmat) 
         if intensity_correct > 1 and (type(warp) is not NonLinearProduct): 
             raise ValueError("Intensity correction value implies NonLinearProduct")
         self._intensity_correct = intensity_correct
@@ -797,8 +748,6 @@ class NonLinearMotionCorrection(NonLinearRegistration):
     def __repr__(self):
         text = f"""\
                 NonLinearMotionCorrection with properties:
-                source:          {self.src_spc}, 
-                reference:       {self.ref_spc}, 
                 series length:   {len(self)}
                 """
         return dedent(text)
@@ -829,7 +778,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         # Prepare the single overall transformation of premat and
         #  world/voxel matrices that is required for interpolation 
         ref2src_vox = (src.world2vox 
-                        @ self.premat.ref2src_world[at_idx] 
+                        @ self.premat.ref2src[at_idx] 
                         @ self.warp.src_spc.FSL2world)
         ijk = apply.aff_trans(ref2src_vox, dfield).T
 

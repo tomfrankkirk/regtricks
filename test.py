@@ -29,17 +29,23 @@ MNI = TD + 'MNI152_T1_2mm.nii.gz'
 
 def test_create_identity():
     r = rt.Registration.identity()
-    assert np.allclose(r.src2ref_world, np.eye(4))
+    assert np.allclose(r.src2ref, np.eye(4))
 
 
 def test_inverse(): 
     r = rt.Registration(MAT)
-    assert np.allclose(r.ref2src_world, np.linalg.inv(MAT))
+    assert np.allclose(r.ref2src, np.linalg.inv(MAT))
 
     mc = rt.MotionCorrection(MATS)
     len(mc)
-    for invm,m in zip(mc.inverse().src2ref_world, MATS):
+    for invm,m in zip(mc.inverse().src2ref, MATS):
         assert np.allclose(invm, np.linalg.inv(m))
+
+
+def test_mcflirt_shape_casting():
+    m = 10 * [ np.eye(4) ]
+    m = np.concatenate(m, axis=0)
+    m = rt.MotionCorrection.from_mcflirt(m, SPC1, SPC2)
 
 
 def test_type_promotion():
@@ -112,7 +118,7 @@ def test_apply_array():
 
 
 def test_mcasl():
-    r = rt.MotionCorrection('testdata/mcasl.mat', ASLT, ASLT)
+    r = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
     x = r.apply_to_image(ASL, ASLT, order=1)
     t = nibabel.load(TD + 'mcasl_truth.nii.gz').get_data()
     # nibabel.save(x, 'mcasl.nii.gz')
@@ -120,21 +126,21 @@ def test_mcasl():
 
 
 def test_asl2brain():
-    r = rt.Registration(TD + 'asl2brain.mat', ASLT, BRAIN)
+    r = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
     x = r.apply_to_image(ASLT, BRAIN, order=1)
     t = nibabel.load(TD + 'asl2brain_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
 def test_brain2asl():
-    r = rt.Registration(TD + 'asl2brain.mat', ASLT, BRAIN)
+    r = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
     x = r.inverse().apply_to_image(BRAIN, ASLT, order=1)
     t = nibabel.load(TD + 'brain2asl_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
 def test_brain2MNI():
-    r = rt.NonLinearRegistration(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+    r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
     x = r.apply_to_image(BRAIN, MNI, order=1)
     t = nibabel.load(TD + 'brain2MNI_truth.nii.gz').get_data()
     assert equal_tolerance(x.dataobj, t, 0.1)
@@ -142,7 +148,7 @@ def test_brain2MNI():
 
 
 # def test_MNI2brain():
-#     r = rt.NonLinearRegistration(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+#     r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
 #     x = r.inverse().apply_to_image(MNI, BRAIN, order=1)
 #     t = nibabel.load(TD + 'MNI2brain_truth.nii.gz').dataobj
 #     # nibabel.save(x, 'MNI2brain.nii.gz')
@@ -150,23 +156,23 @@ def test_brain2MNI():
  
 
 def test_asl2MNI():
-    r1 = rt.Registration(TD + 'asl2brain.mat', ASLT, BRAIN)
-    r2 = rt.NonLinearRegistration(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+    r1 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
+    r2 = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
     x = rt.chain(r1, r2).apply_to_image(ASLT, MNI, order=1)
     t = nibabel.load(TD + 'asl2MNI_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
 # def test_mcasl2brain():
-#     r1 = rt.MotionCorrection('testdata/asl_mcf.mat', ASLT, ASLT)
-#     r2 = rt.Registration(TD + 'asl2brain.mat', ASLT, BRAIN)
+#     r1 = rt.rt.MotionCorrection.from_mcflirt('testdata/asl_mcf.mat', ASLT, ASLT)
+#     r2 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
 #     x = rt.chain(r1, r2).apply_to_image(ASL, BRAIN, order=1)
 #     t = nibabel.load(TD + 'mcasl2brain_truth.nii.gz').dataobj
 #     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
 # def test_brain2MNI2brain():
-#     r1 = rt.NonLinearRegistration(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+#     r1 = rt.Registration.from_flirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
 #     x = rt.chain(r1, r1.inverse()).apply_to_image(BRAIN, BRAIN, order=1)
 #     t = nibabel.load(TD + 'brain2MNI2brain_truth.nii.gz').dataobj
 #     nibabel.save(x, 'brain2MNI2brain_rt.nii.gz')
@@ -174,4 +180,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    test_type_promotion()
+    test_mcflirt_shape_casting()

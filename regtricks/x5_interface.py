@@ -35,11 +35,11 @@ def save_manager(reg, path):
         if isinstance(reg, MotionCorrection): 
             f.attrs['Type'] = 'linear_timeseries'
             write_affine(g, 
-                np.stack(reg.src2ref_world_mats, axis=2), 
-                np.stack(reg.ref2src_world_mats, axis=2))
+                np.stack(reg.src2ref, axis=2), 
+                np.stack(reg.ref2src, axis=2))
         elif isinstance(reg, Registration):
             f.attrs['Type'] = 'linear'
-            write_affine(g, reg.src2ref_world, reg.ref2src_world)
+            write_affine(g, reg.src2ref, reg.ref2src)
         else: 
             raise X5Error("Unrecognised registration type")
 
@@ -64,15 +64,15 @@ def load_manager(path):
         read_metadata(f['/'])
         src_spc = read_imagespace(f['/A'])
         ref_spc = read_imagespace(f['/B'])
-        src2ref_world = read_affine(f['/Transform'])
-        shp = src2ref_world.shape 
+        src2ref = read_affine(f['/Transform'])
+        shp = src2ref.shape 
 
         if reg_type == 'linear':
-            return Registration(src2ref_world, src_spc, ref_spc, "world")
+            return Registration(src2ref, src_spc, ref_spc, "world")
 
         elif reg_type == 'linear_timeseries':
             return MotionCorrection(
-                [ src2ref_world[:,:,x] for x in range(shp[-1]) ], 
+                [ src2ref[:,:,x] for x in range(shp[-1]) ], 
                 src_spc, ref_spc, "world")
 
         else: 

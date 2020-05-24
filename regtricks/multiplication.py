@@ -32,8 +32,8 @@ def registration(lhs, rhs):
     # lhs   rhs 
     # reg @ reg 
     if (type(lhs) is Registration and type(rhs) is Registration): 
-        overall = lhs.src2ref_world @ rhs.src2ref_world
-        return Registration(overall, rhs.src_spc, lhs.ref_spc, "world")
+        overall = lhs.src2ref @ rhs.src2ref
+        return Registration(overall)
 
     else: 
         raise NotImplementedError("Cannot interpret multiplication of "
@@ -46,23 +46,23 @@ def moco(lhs, rhs):
     # lhs   rhs 
     # reg @ MC
     if type(lhs) is Registration: 
-        overall = [ lhs.src2ref_world @ m for m in rhs.src2ref_world ]
+        overall = [ lhs.src2ref @ m for m in rhs.src2ref ]
 
     # lhs  rhs 
     # MC @ reg
     elif type(rhs) is Registration: 
-        overall = [ m @ rhs.src2ref_world for m in lhs.src2ref_world ]
+        overall = [ m @ rhs.src2ref for m in lhs.src2ref ]
 
     # lhs  rhs 
     # MC @ MC 
     elif (type(lhs) is MotionCorrection and type(rhs) is MotionCorrection): 
-        overall = [ l @ r for l,r in zip(lhs.src2ref_world, rhs.src2ref_world) ]
+        overall = [ l @ r for l,r in zip(lhs.src2ref, rhs.src2ref) ]
 
     else:
         raise NotImplementedError("Cannot interpret multiplication of "
                 f"{type(lhs)} with {type(rhs)}")
 
-    return MotionCorrection(overall, rhs.src_spc, lhs.ref_spc, "world")
+    return MotionCorrection(overall)
 
 def nonlinearreg(lhs, rhs):
     from .regtricks import (NonLinearRegistration, NonLinearProduct,
@@ -79,7 +79,7 @@ def nonlinearreg(lhs, rhs):
             constructor = NonLinearMotionCorrection
 
         pre = lhs.premat @ rhs 
-        return constructor(lhs.warp, rhs.src_spc, lhs.ref_spc, pre, 
+        return constructor(lhs.warp, pre, 
                            lhs.postmat, lhs._intensity_correct)
 
     #  lhs    rhs 
@@ -92,7 +92,7 @@ def nonlinearreg(lhs, rhs):
             constructor = NonLinearMotionCorrection
 
         post = lhs @ rhs.postmat
-        return constructor(rhs.warp, rhs.src_spc, lhs.ref_spc, rhs.premat, 
+        return constructor(rhs.warp, rhs.premat, 
                            post, rhs._intensity_correct)
 
     # lhs   rhs 
@@ -108,8 +108,7 @@ def nonlinearreg(lhs, rhs):
         elif lhs.intensity_correct: icorr = 2
         elif rhs.intensity_correct: icorr = 1
         else: icorr = 0
-        ret = NonLinearRegistration._manual_construct(warp, rhs.src_spc, 
-                lhs.ref_spc, rhs.premat, lhs.postmat)
+        ret = NonLinearRegistration._manual_construct(warp, rhs.premat, lhs.postmat)
         ret._intensity_correct = icorr 
         return ret 
 
@@ -127,8 +126,7 @@ def nonlinearmoco(lhs, rhs):
     # Note that this matches both registration and motion correction
     if isinstance(rhs, Registration): 
         pre = lhs.premat @ rhs 
-        return NonLinearMotionCorrection(rhs.warp, 
-            rhs.src_spc, lhs.ref_spc, pre, lhs.postmat, lhs._intensity_correct)
+        return NonLinearMotionCorrection(rhs.warp, pre, lhs.postmat, lhs._intensity_correct)
 
     #  lhs    rhs 
     # other @ NLMC
@@ -136,7 +134,7 @@ def nonlinearmoco(lhs, rhs):
     elif isinstance(lhs, Registration): 
         post = lhs @ rhs.postmat
         return NonLinearMotionCorrection(rhs.warp, 
-            rhs.src_spc, lhs.ref_spc, rhs.premat, post, rhs._intensity_correct)
+            rhs.premat, post, rhs._intensity_correct)
 
     # lhs  rhs 
     # NL @ NL
@@ -149,8 +147,7 @@ def nonlinearmoco(lhs, rhs):
         elif lhs.intensity_correct: icorr = 2
         elif rhs.intensity_correct: icorr = 1
         else: icorr = 0
-        return NonLinearMotionCorrection(warp, rhs.src_spc, 
-                lhs.ref_spc, rhs.premat, lhs.postmat, icorr)
+        return NonLinearMotionCorrection(warp, rhs.premat, lhs.postmat, icorr)
 
     else: 
         raise NotImplementedError("Cannot interpret multiplication of "

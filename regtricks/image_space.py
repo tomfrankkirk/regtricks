@@ -321,7 +321,7 @@ class ImageSpace(object):
         from regtricks import Registration
 
         if isinstance(reg, Registration):
-            reg = reg.src2ref_world
+            reg = reg.src2ref
         if not isinstance(reg, np.ndarray):
             raise RuntimeError("argument must be a np.array or Registration")
 
