@@ -172,8 +172,9 @@ def get_field(coeff1, ref, coeff2=None, mid=None, post=None):
             of warp1, *in FSL coordinates*. 
     """
 
-    assert isinstance(mid, np.ndarray), 'Should be np.array in FSL convention'
-    assert isinstance(post, np.ndarray), 'Should be np.array in FSL convention'
+    for m in [mid, post]:
+        if not isinstance(m, (np.ndarray, type(None))): 
+            raise ValueError('mid/post should be np.array in FSL convention')
 
     with tempfile.TemporaryDirectory() as d: 
         w1 = op.join(d, 'w1.nii.gz')
