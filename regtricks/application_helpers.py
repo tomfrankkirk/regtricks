@@ -32,7 +32,7 @@ def src_load_helper(src):
     return data, type(src)
 
 
-def _make_iterable(data):
+def _make_iterable(data, series_length):
     """
     Ensure array is 4D, with the fourth dimension at the front (ie, T, XYZ).
     3D volumes will be expanded with a singleton dimension: 1, XYZ
@@ -40,8 +40,11 @@ def _make_iterable(data):
     """
     if len(data.shape) == 4: 
         return np.moveaxis(data, 3, 0)
-    else: 
+    elif series_length == 1: 
         return data.reshape(1, *data.shape)
+    else: 
+        assert data.ndim == 3, 'series expansion should be with 3D volume'
+        return [ data ] * series_length
 
 
 def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
@@ -65,6 +68,7 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
 
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
     interp = map_coordinates(data, ijk, **kwargs)
+    interp = np.clip(interp, data.min(), data.max())
     return interp.reshape(ref_spc.size) * scale 
 
 
@@ -86,20 +90,27 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
         (np.array) transformed data 
     """
 
-    if len(data.shape) != 4 and len(data.shape) != 3: 
+    if data.ndim not in (3,4): 
         raise RuntimeError("Can only handle 3D/4D data")
+            
+    if ((data.ndim == 4) and (len(transform) > 1) and 
+        (len(transform)) != data.shape[3]):
+        raise RuntimeError("Number of volumes in 4D series does not match "
+                "length of transformation series")
 
-    if len(transform) > 1 and (len(transform) != data.shape[-1]): 
-        raise RuntimeError("Number of volumes in data does not match transform")
+    if len(transform) == 1: 
+        series_length = 1 if data.ndim == 3 else data.shape[3]
+    else: 
+        series_length = len(transform)
 
     # Make the data 4D so that the workers of the pool can iterate over it 
     # Each worker recieves a tuple of (vol, idx), one frame of the series and
     # its corresponding index number (which is used to get the correct bit
     # of the transform). Pre-calculate and cache any information that can be 
     # shared amongst the workers 
-    data = _make_iterable(data)
+    data = _make_iterable(data, series_length)
     transform.prepare_cache(ref_spc)
-    worker_args = zip(range(data.shape[0]), data)
+    worker_args = zip(range(series_length), data)
     worker = functools.partial(interpolate_and_scale, 
         transform=transform, ref_spc=ref_spc, src_spc=src_spc, **kwargs)
 
@@ -115,7 +126,7 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     # Reset the cache on the transform to be safe. 
     transform.reset_cache()
     resamp = np.stack(resamp, axis=3)
-    return np.clip(np.squeeze(resamp), data.min(), data.max()) 
+    return np.squeeze(resamp) 
 
 
 def aff_trans(matrix, points): 
