@@ -10,7 +10,7 @@ testdata
 splines
 spline_tests
 *.tar
-docs
+docs/_build
 *.log 
 *.ipynb 
 build*
