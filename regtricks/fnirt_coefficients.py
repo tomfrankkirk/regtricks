@@ -18,9 +18,12 @@ class FNIRTCoefficients(object):
         coeffs; nibabel object or path to coefficients file
         src: str or ImageSpace, path to original source for transform
         ref: str or ImageSpace, path to original reference for transform
+        constrain_jac (bool/tuple): constrain the Jacobian of the transform
+            (default False). If True, default limits of (0.01, 100) are used, 
+            otherwise the limits (min,max) can be passed directly. 
     """
 
-    def __init__(self, coeffs, src, ref):
+    def __init__(self, coeffs, src, ref, constrain_jac=False):
         if isinstance(coeffs, str):
             coeffs = nibabel.load(coeffs)
         else: 
@@ -63,6 +66,14 @@ class FNIRTCoefficients(object):
         # We now have either an absolute field, or coefficients volume 
         self.coefficients = coeffs 
 
+    @property
+    def jmin(self):
+        return self.constrain_jac[0]
+
+    @property
+    def jmax(self):
+        return self.constrain_jac[1]
+
     def get_cache_value(self, ref, postmat):
         """
         Return cacheable values, if possible, else return None. 
@@ -86,13 +97,34 @@ class FNIRTCoefficients(object):
             pmat = postmat.to_fsl(self.ref_spc, ref)
 
         if same1: 
-            return get_field(self.coefficients, ref, post=pmat)
+            return get_field(self.coefficients, ref, post=pmat, 
+                             jmin=self.jmin, jmax=self.jmax)
         else: 
             return None 
 
-    def get_displacements(self, ref, postmat): 
-        post = postmat.to_fsl(self.ref_spc, ref)
-        return get_field(self.coefficients, ref, post=post)
+    def get_displacements(self, ref, postmat, at_idx=None): 
+        """
+        Resolve displacements of transform within reference space with postmat.
+
+        Args: 
+            ref (ImageSpace): space within which to resolve displacements
+            postmat (Registration/MotionCorrection): post-warp transform
+            at_idx (int): index number within postmat to use (for MC). Default
+                None, which corresponds to Registration postmats (not MC). 
+
+        Returns: 
+            (array): Nx3 array of absolute positions of reference voxels in the 
+                grid of the warp's source space, in FSL coordinates
+        """
+
+        if at_idx is None: 
+            assert len(postmat) == 1
+            p = postmat 
+        else: 
+            p = postmat[at_idx]
+        post = p.to_fsl(self.ref_spc, ref)
+        return get_field(self.coefficients, ref, post=post, jmin=self.jmin, 
+                         jmax=self.jmax)
 
 
 class NonLinearProduct(object):
@@ -119,6 +151,40 @@ class NonLinearProduct(object):
         self.src_spc = first.src_spc 
         self.ref_spc = second.ref_spc 
         self.midmat = second_pre @ first_post
+
+        jmin = None
+        jmax = None 
+        if first.jmin is not None: 
+            jmin = first.jmin
+        if ((second.jmin is not None) 
+             and (jmin is None)):
+            jmin = second.jmin
+        if ((second.jmin is not None) 
+             and (jmin is not None)
+             and (second.jmin > jmin)):
+            jmin = second.jmin
+
+        if first.jmax is not None: 
+            jmax = first.jmax
+        if ((second.jmax is not None) 
+             and (jmax is None)):
+            jmax = second.jmax
+        if ((second.jmax is not None) 
+             and (jmax is not None)
+             and (second.jmax < jmax)):
+            jmax = second.jmax
+
+        assert (((jmin is None) and (jmax is None)) 
+                or all([ isinstance(j, (int, float)) for j in [jmin,jmax] ]))
+        self.constrain_jac = (jmin, jmax)
+
+    @property
+    def jmin(self):
+        return self.constrain_jac[0]
+
+    @property
+    def jmax(self):
+        return self.constrain_jac[1]
 
     def get_cache_value(self, ref, postmat):
         """
@@ -158,28 +224,44 @@ class NonLinearProduct(object):
         same = (same1 & same2)
 
         if same: 
-            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients,mmat, pmat)
+            return get_field(self.warp1.coefficients, ref, 
+                             coeff2=self.warp2.coefficients, mid=mmat, 
+                             post=pmat, jmin=self.constrain_jac[0], 
+                             jmax=self.constrain_jac[1])
         else: 
             return None 
 
-    def get_displacements(self, ref, postmat, at_idx):
-        if at_idx > len(self) and len(self) == 1: 
-            mid = self.midmat.to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
-            post = postmat.to_fsl(self.warp2.ref_spc, ref)
-            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
+    def get_displacements(self, ref, postmat, at_idx=None):
+        """
+        Resolve displacements of transform within reference space with postmat.
 
-        elif at_idx < len(self):
-            mid = self.warp.midmat[at_idx].to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
-            post = postmat[at_idx].to_fsl(self.warp2.ref_spc, ref)
-            return get_field(self.warp1.coefficients, ref, self.warp2.coefficients, mid, post)
+        Args: 
+            ref (ImageSpace): space within which to resolve displacements
+            postmat (Registration/MotionCorrection): post-warp transform
+            at_idx (int): index number within mid/postmat to use (for MC). 
+                Default is None, which corresponds to Registration mid/postmats. 
 
+        Returns: 
+            (array): Nx3 array of absolute positions of reference voxels in the 
+                grid of the warp's source space, in FSL coordinates
+        """
+
+        if at_idx is None: 
+            assert (len(postmat) == 1) and (len(self.midmat) == 1)
+            p = postmat 
+            m = self.midmat
         else: 
-            raise ValueError("Requested index within transform exceeds series length")
+            p = postmat[at_idx]
+            m = self.midmat[at_idx]
+       
+        mid = m.to_fsl(self.warp1.ref_spc, self.warp2.src_spc)
+        post = p.to_fsl(self.warp2.ref_spc, ref)
+        return get_field(self.warp1.coefficients, ref, 
+                            coeff2=self.warp2.coefficients, mid=mid, post=post,
+                            jmin=self.jmin, jmax=self.jmax)
 
-        return None 
 
-
-def get_field(coeff1, ref, coeff2=None, mid=None, post=None):
+def get_field(coeff1, ref, coeff2=None, mid=None, post=None, jmin=None, jmax=None):
     """
     Resolve coefficients into displacement field via convertwarp. 
 
@@ -222,6 +304,10 @@ def get_field(coeff1, ref, coeff2=None, mid=None, post=None):
             p = op.join(d, 'post.mat')
             np.savetxt(p, post)
             cmd += f' --postmat={p}'
+
+        if (jmin is not None) and (jmax is not None):
+            assert all([ isinstance(j, (int, float)) for j in [jmin,jmax] ])
+            cmd += f' --constrainj --jmin={jmin} --jmax={jmax}' 
 
         field = op.join(d, 'field.nii.gz')
         cmd += f' --out={field} --absout'
