@@ -79,13 +79,14 @@ def get_version():
             update_metadata(version, "unknown")
     return version
 
-
-setup(name=PACKAGE_NAME,
-      version=get_version(),
-      description="Tools for manipulating and applying registrations",
-      long_description=get_filetext('README.md'),
-      long_description_content_type='text/markdown',
-      author='Tom Kirk',
-      author_email='thomas.kirk@eng.ox.ac.uk',
-      install_requires=get_requirements(),
-      packages=find_packages())
+if __name__ == "__main__":
+    
+    setup(name=PACKAGE_NAME,
+        version=get_version(),
+        description="Tools for manipulating and applying registrations",
+        long_description=get_filetext('README.md'),
+        long_description_content_type='text/markdown',
+        author='Tom Kirk',
+        author_email='thomas.kirk@eng.ox.ac.uk',
+        install_requires=get_requirements(),
+        packages=find_packages())
