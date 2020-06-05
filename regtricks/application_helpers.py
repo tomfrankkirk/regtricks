@@ -14,7 +14,7 @@ from fsl.wrappers import applywarp
 import numpy as np 
 from scipy.ndimage import map_coordinates
 
-from .image_space import ImageSpace
+from regtricks.image_space import ImageSpace
 
 
 def src_load_helper(src):

@@ -5,6 +5,7 @@ from textwrap import dedent
 import tempfile
 import subprocess
 import copy
+from functools import partial
 
 import nibabel
 from nibabel import Nifti2Image, MGHImage
@@ -12,11 +13,12 @@ import numpy as np
 from fsl.data.image import Image as FSLImage
 from fsl.wrappers import applywarp
 
-from .image_space import ImageSpace
-from . import x5_interface as x5 
-from . import application_helpers as apply
-from .fnirt_coefficients import FNIRTCoefficients, NonLinearProduct, det_jacobian
-from . import multiplication as multiply
+from regtricks.image_space import ImageSpace
+from regtricks import x5_interface as x5 
+from regtricks import application_helpers as apply
+from regtricks.fnirt_coefficients import FNIRTCoefficients, NonLinearProduct
+from regtricks.fnirt_coefficients import det_jacobian, cdet_jacobian
+from regtricks import multiplication as multiply
 
 # cache for intensity correction?
 # cast_space method 
@@ -287,6 +289,11 @@ class Registration(Transform):
         """Save as textfile at path"""
         np.savetxt(path, self.src2ref)
 
+    def save_fsl(self, path, src, ref):
+        """Save in FSL convention as textfile at path"""
+        m = self.to_fsl(src, ref)
+        np.savetxt(path, m)
+
     def prepare_cache(self, ref):
         """
         Cache re-useable data before interpolate_and_scale. Just the voxel
@@ -438,8 +445,7 @@ class MotionCorrection(Registration):
         """Transformation matrices in FSL terms"""
         return [ t.to_fsl(src, ref) for t in self.transforms ]
 
-    def save_txt(self, outdir, src=None, ref=None, convention="world", 
-                 prefix="MAT_"):
+    def save_txt(self, outdir, prefix="MAT_"):
         """
         Save individual transformation matrices in text format
         in outdir. Matrices will be named prefix_001... 
@@ -455,8 +461,17 @@ class MotionCorrection(Registration):
         
         os.makedirs(outdir, exist_ok=True)
         for idx, r in enumerate(self.transforms):
-            p = op.join(outdir, "MAT_{:04d}.txt".format(idx))
-            r.save_txt(p, src, ref, convention)
+            p = op.join(outdir, "{}{:04d}.txt".format(prefix, idx))
+            r.save_txt(p)
+
+    def save_fsl(self, outdir, src, ref, prefix="MAT_"):
+        """Save in FSL convention as textfiles at path"""
+
+        os.makedirs(outdir, exist_ok=True)
+        for idx, r in enumerate(self.transforms):
+            p = op.join(outdir, "{}{:04d}.txt".format(prefix, idx))
+            m = r.to_fsl(src, ref)
+            np.savetxt(p, m)
 
     def resolve(self, src, ref, at_idx):
         """
@@ -499,9 +514,13 @@ class NonLinearRegistration(Transform):
         ref (path/ImageSpace): reference image used for generating FNIRT coefficients 
         intensity_correct: intensity correct output via the Jacobian determinant
             of this warp (when self.apply_to*() is called)
+        constrain_jac (bool/array-like): constrain Jacobian for intensity
+            correction (default False). If True, limits of (0.01, 100) will 
+            be used, or explicit limits can be given as (min, max)
     """
 
-    def __init__(self, warp, src, ref, intensity_correct=False):
+    def __init__(self, warp, src, ref, intensity_correct=False, 
+                 constrain_jac=False):
 
         raise NotImplementedError("Currently only FNIRT supported, use "
                                 "NonLinearRegistration.from_fnirt() instead")
@@ -511,7 +530,8 @@ class NonLinearRegistration(Transform):
         # self._intensity_correct = int(intensity_correct)
 
     @classmethod
-    def from_fnirt(cls, coefficients, src, ref, intensity_correct=False):
+    def from_fnirt(cls, coefficients, src, ref, intensity_correct=False, 
+                   constrain_jac=False):
         """
         FNIRT non-linear registration from a coefficients file. If a pre-warp
         and post-warp transformation need to be applied, create these as 
@@ -524,12 +544,15 @@ class NonLinearRegistration(Transform):
             ref (str/ImageSpace): the reference of the warp 
             intensity_correct (bool): whether to apply intensity correction via
                 the determinant of the warp's Jacobian (default false)
+            constrain_jac (bool/array-like): constrain Jacobian for intensity
+                correction (default False). If True, limits of (0.01, 100) will 
+                be used, or explicit limits can be given as (min, max)
 
         Returns: 
             NonLinearRegistration object 
         """
 
-        warp = FNIRTCoefficients(coefficients, src, ref)
+        warp = FNIRTCoefficients(coefficients, src, ref, constrain_jac)
         return NonLinearRegistration._manual_construct(warp, 
             np.eye(4), np.eye(4), intensity_correct)
 
@@ -546,7 +569,7 @@ class NonLinearRegistration(Transform):
 
     @classmethod
     def _manual_construct(cls, warp, premat, postmat, 
-                          intensity_correct=False):
+                          intensity_correct):
         """Manual constructor, do not use from outside regtricks"""
 
         # # We store intensity correction as an integer private variable,
@@ -563,6 +586,7 @@ class NonLinearRegistration(Transform):
         x.premat = multiply.cast_potential_array(premat)
         x.postmat = multiply.cast_potential_array(postmat) 
         x.intensity_correct = int(intensity_correct)
+
         return x 
 
     def inverse(self):
@@ -664,7 +688,7 @@ class NonLinearRegistration(Transform):
             # Intensity correct on second warp. Just calculate the displacement field
             # for the second warp and the corresponding postmat. 
             elif self._intensity_correct == 2: 
-                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat, 0)
+                dfield2 = self.warp.warp2.get_displacements(ref, self.postmat)
                 scale = det_jacobian(dfield2.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on first warp. Calculate the displacement field on 
@@ -673,10 +697,10 @@ class NonLinearRegistration(Transform):
             # successor transform 
             else: 
                 assert self._intensity_correct == 1 
-                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity(), 0)
+                dfield1 = self.warp.warp1.get_displacements(ref, Registration.identity())
                 dj = det_jacobian(dfield1.reshape(*ref.size, 3), ref.vox_size)
-                successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
-                    self.warp.warp2.ref_spc, premat=self.warp.midmat, postmat=self.postmat)
+                successor = NonLinearRegistration._manual_construct(self.warp.warp2, premat=self.warp.midmat, 
+                    postmat=self.postmat, intensity_correct=False)
                 scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
 
         return (ijk, scale)
@@ -693,10 +717,13 @@ class NonLinearMotionCorrection(NonLinearRegistration):
         postmat: list of Registration objects
         intensity_correct: int (0/1/2/3), whether to apply intensity
             correction, and at what stage in the case of NLPs
+        constrain_jac (bool/array-like): constrain Jacobian for intensity
+            correction (default False). If True, limits of (0.01, 100) will 
+            be used, or explicit limits can be given as (min, max)
     """
 
-    def __init__(self, warp, src, ref, premat, postmat, 
-                 intensity_correct=0):
+    def __init__(self, warp, premat, postmat, intensity_correct=0, 
+                 constrain_jac=False):
         
         Transform.__init__(self)
         self.warp = warp
@@ -752,7 +779,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             src (ImageSpace): in which data currently exists and interpolation
                 will be performed
             ref (ImageSpace): in which data needs to be expressed
-            at_idx (int): index number within series of transforms to apply
+            at_idx (int): index number within MC series of transforms to apply
 
         Returns: 
             (np.ndarray, np.ndarray/int) coordinates on which to interpolate, 
@@ -786,7 +813,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
             # Intensity correct on second warp. Just calculate the displacement field
             # for the second warp and the corresponding postmat. 
             elif self._intensity_correct == 2: 
-                df = self.warp.warp2.get_displacements(ref, self.postmat[at_idx])
+                df = self.warp.warp2.get_displacements(ref, self.postmat, at_idx)
                 scale = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
 
             # Intensity correct on first warp. Calculate the displacement field on 

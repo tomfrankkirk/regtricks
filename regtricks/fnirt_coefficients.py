@@ -6,7 +6,8 @@ import itertools
 import nibabel 
 import numpy as np 
 
-from . import ImageSpace
+from regtricks.image_space import ImageSpace
+from regtricks.application_helpers import aff_trans
 
 class FNIRTCoefficients(object):
     """

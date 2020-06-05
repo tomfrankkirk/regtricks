@@ -9,7 +9,6 @@ import copy
 
 import numpy as np 
 
-
 def get_highest_type(first, second):
     """
     When combining two arbitrary transforms, the output will be of the same 
@@ -32,7 +31,7 @@ def get_highest_type(first, second):
         type object of the highest class 
     """
 
-    from .regtricks import (Registration, MotionCorrection,
+    from regtricks.core import (Registration, MotionCorrection,
             NonLinearMotionCorrection, NonLinearRegistration)
 
     TYPE_MAP = ({
@@ -59,7 +58,7 @@ def registration(lhs, rhs):
     Combine two Registrations, return a Registration. 
     """
 
-    from .regtricks import Registration
+    from regtricks.core import Registration
 
     # lhs   rhs 
     # reg @ reg 
@@ -78,7 +77,7 @@ def moco(lhs, rhs):
     Return a MotionCorrection. 
     """
 
-    from .regtricks import MotionCorrection, Registration
+    from regtricks.core import MotionCorrection, Registration
 
     # lhs   rhs 
     # reg @ MC
@@ -108,7 +107,7 @@ def nonlinearreg(lhs, rhs):
     Return a NonLinearRegistration. 
     """
 
-    from .regtricks import (NonLinearRegistration, NonLinearProduct,
+    from regtricks.core import (NonLinearRegistration, NonLinearProduct,
                             Registration, MotionCorrection, 
                             NonLinearMotionCorrection)
 
@@ -151,8 +150,7 @@ def nonlinearreg(lhs, rhs):
         elif lhs.intensity_correct: icorr = 2
         elif rhs.intensity_correct: icorr = 1
         else: icorr = 0
-        ret = NonLinearRegistration._manual_construct(warp, rhs.premat, lhs.postmat)
-        ret._intensity_correct = icorr 
+        ret = NonLinearRegistration._manual_construct(warp, rhs.premat, lhs.postmat, icorr)
         return ret 
 
     else: 
@@ -167,7 +165,7 @@ def nonlinearmoco(lhs, rhs):
     Return a NonLinearMotionCorrection. 
     """
 
-    from .regtricks import (NonLinearRegistration, NonLinearProduct, 
+    from regtricks.core import (NonLinearRegistration, NonLinearProduct, 
                             Registration, NonLinearMotionCorrection)
 
     # lhs    rhs 
@@ -219,7 +217,7 @@ def chain(*args):
         Transform object representing the complete transformation 
     """
 
-    from .regtricks import Transform
+    from regtricks.core import Transform
 
     if not all([ isinstance(r, Transform) for r in args ]):
         raise RuntimeError("Each item in sequence must be a",
@@ -242,7 +240,7 @@ def chain(*args):
 def cast_potential_array(arr):
     """Helper to convert 4x4 arrays to Registrations if not already"""
 
-    from .regtricks import Registration, Transform
+    from regtricks.core import Registration, Transform
 
     if type(arr) is np.ndarray: 
         assert arr.shape == (4,4)

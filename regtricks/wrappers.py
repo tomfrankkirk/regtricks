@@ -9,7 +9,7 @@ from fsl.wrappers.flirt import mcflirt as mcflirt_cmd
 from fsl.wrappers.fnirt import fnirt as fnirt_cmd 
 from fsl.data.image import Image as FSLImage
 
-from . import Registration, MotionCorrection, NonLinearRegistration
+from regtricks.core import Registration, MotionCorrection, NonLinearRegistration
 
 def flirt(src, ref, **kwargs):
     """
