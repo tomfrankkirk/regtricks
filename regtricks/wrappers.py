@@ -35,7 +35,7 @@ def flirt(src, ref, **kwargs):
             kwargs['omat'] = op.join(d, 'omat.mat')
         flirt_cmd(src, ref, **kwargs)
 
-        return Registration(kwargs['omat'], src, ref, "fsl")
+        return Registration.from_flirt(kwargs['omat'], src, ref)
 
 
 def mcflirt(src, refvol=-1, **kwargs):
@@ -82,7 +82,7 @@ def mcflirt(src, refvol=-1, **kwargs):
         save_mats = ('mats' in kwargs)
         kwargs['mats'] = True 
         mcflirt_cmd(src, **kwargs)
-        mc = MotionCorrection(matsname, src, src, "fsl")
+        mc = MotionCorrection.from_mcflirt(matsname, src, src)
         if not save_mats: 
             shutil.rmtree(matsname)
 
@@ -100,4 +100,4 @@ def fnirt(src, ref, **kwargs):
         fnirt_cmd(src, ref=ref, **kwargs)
         coeffs = nibabel.load(kwargs['cout'])
         coeffs.get_data()
-        return NonLinearRegistration(coeffs, src, ref)
+        return NonLinearRegistration.from_fnirt(coeffs, src, ref)
