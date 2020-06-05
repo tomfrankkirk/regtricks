@@ -26,11 +26,6 @@ class FNIRTCoefficients(object):
         else: 
             assert isinstance(coeffs, nibabel.Nifti1Image)
 
-        # if not (coeffs.header.get_intent()[0] in 
-        #     [ 'fnirt cubic spline coef', 'fnirt quad spline coef' ]): 
-        #     raise ValueError("Coefficients file is not FNIRT compatible")       
-        self.coefficients = coeffs 
-
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         self.ref_spc = ref 
@@ -38,6 +33,35 @@ class FNIRTCoefficients(object):
         if not isinstance(src, ImageSpace):
             src = ImageSpace(src)
         self.src_spc = src 
+
+        if constrain_jac == False: 
+            self.constrain_jac = (0.01, 100)
+        elif constrain_jac == True: 
+            self.constrain_jac = (None, None)
+        else: 
+            if not all([ isinstance(j, (int, float)) for j in constrain_jac]):
+                raise ValueError("Constrain_jac should be 2 numeric values")
+            self.constrain_jac = constrain_jac
+
+        self.is_field = False 
+        if ((coeffs.header.get_intent()[0] not in 
+            [ 'fnirt cubic spline coef', 'fnirt quad spline coef' ])
+            and (coeffs.shape[:3] == ref.size).all()): 
+
+            #  We have a displacement field. Force into absolute convention 
+            self.is_field = True 
+            warp0 = coeffs.dataobj[0,0,0,:]
+            warpN = coeffs.dataobj[-1,-1,-1,:]
+            if (np.abs(warp0 - warpN) < 0.5 * ref.FoV_size).all(): 
+                
+                ijk = ref.ijk_grid().reshape(-1,3)
+                ijk = aff_trans(ref.vox2FSL, ijk)
+                ijk += coeffs.get_data().reshape(-1,3)
+                coeffs = nibabel.Nifti1Image(ijk.reshape(*ref.size, 3), 
+                         coeffs.affine, coeffs.header)
+
+        # We now have either an absolute field, or coefficients volume 
+        self.coefficients = coeffs 
 
     def get_cache_value(self, ref, postmat):
         """
