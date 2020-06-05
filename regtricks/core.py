@@ -17,7 +17,7 @@ from regtricks.image_space import ImageSpace
 from regtricks import x5_interface as x5 
 from regtricks import application_helpers as apply
 from regtricks.fnirt_coefficients import FNIRTCoefficients, NonLinearProduct
-from regtricks.fnirt_coefficients import det_jacobian, cdet_jacobian
+from regtricks.fnirt_coefficients import det_jacobian
 from regtricks import multiplication as multiply
 
 # cache for intensity correction?
