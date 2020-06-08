@@ -183,7 +183,8 @@ class Transform(object):
         if len(data.shape) == 4: superlevel = np.array((*superlevel, 1))
         if (superlevel != 1).any():
             resamp = apply.sum_array_blocks(resamp, superlevel)
-
+            resamp = resamp / np.prod(superlevel[:3])
+            
         return resamp      
 
 
