@@ -37,9 +37,9 @@ class FNIRTCoefficients(object):
             src = ImageSpace(src)
         self.src_spc = src 
 
-        if constrain_jac == False: 
+        if constrain_jac == True: 
             self.constrain_jac = (0.01, 100)
-        elif constrain_jac == True: 
+        elif constrain_jac == False: 
             self.constrain_jac = (None, None)
         else: 
             if not all([ isinstance(j, (int, float)) for j in constrain_jac]):
