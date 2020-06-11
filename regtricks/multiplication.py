@@ -107,9 +107,9 @@ def nonlinearreg(lhs, rhs):
     Return a NonLinearRegistration. 
     """
 
-    from regtricks.core import (NonLinearRegistration, NonLinearProduct,
-                            Registration, MotionCorrection, 
-                            NonLinearMotionCorrection)
+    from regtricks.core import (NonLinearRegistration, Registration, 
+                            MotionCorrection, NonLinearMotionCorrection)
+    from regtricks.fnirt_coefficients import NonLinearProduct
 
     # lhs    rhs 
     # NLR @ other
@@ -141,9 +141,6 @@ def nonlinearreg(lhs, rhs):
     # NLR @ NLR
     elif (type(lhs) is NonLinearRegistration 
           and type(rhs) is NonLinearRegistration): 
-        if (rhs.intensity_correct and lhs.intensity_correct): 
-            raise NotImplementedError("Cannot apply intensity correction "
-                        "for two non-linear registrations")
 
         warp = NonLinearProduct(rhs.warp, rhs.postmat, lhs.premat, lhs.warp)
         if (lhs.intensity_correct and rhs.intensity_correct): icorr = 3
@@ -165,8 +162,9 @@ def nonlinearmoco(lhs, rhs):
     Return a NonLinearMotionCorrection. 
     """
 
-    from regtricks.core import (NonLinearRegistration, NonLinearProduct, 
-                            Registration, NonLinearMotionCorrection)
+    from regtricks.core import (NonLinearRegistration, Registration, 
+                            NonLinearMotionCorrection)
+    from regtricks.fnirt_coefficients import NonLinearProduct
 
     # lhs    rhs 
     # NLMC @ other
@@ -224,8 +222,8 @@ def chain(*args):
                         " Registration, MotionCorrection or NonLinearRegistration")
 
     # Do nothing for a single or no args 
-    if (len(args) < 2):
-        return args
+    if len(args) == 0: return []
+    elif len(args) == 1: return args[0]  
 
     # Two: multiply them in reverse order 
     elif len(args) == 2:
