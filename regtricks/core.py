@@ -177,6 +177,9 @@ class Transform(object):
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
 
+        # Force to float data 
+        if data.dtype.kind != 'f': 
+            data = data.astype(np.float32)
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 
         # Sum back down if super-resolution 
