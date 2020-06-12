@@ -1,6 +1,14 @@
 regtricks package
 =================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   regtricks.transforms
+
 Submodules
 ----------
 
@@ -8,14 +16,6 @@ regtricks.application\_helpers module
 -------------------------------------
 
 .. automodule:: regtricks.application_helpers
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-regtricks.core module
----------------------
-
-.. automodule:: regtricks.core
    :members:
    :undoc-members:
    :show-inheritance:

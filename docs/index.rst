@@ -24,9 +24,9 @@ Regtricks is a python library that simplifies the process of working with and ap
 Why?
 ============
 
-Less interpolation
+Minimise interpolation
 -----------------------
-No matter how many registrations combined together using ``chain()``, regtricks will only ever perform **one** interpolation step. 
+No matter how many registrations are combined together using ``chain()``, regtricks will only ever perform **one** interpolation step. 
 This preserves image quality by minimising interpolation-induced blurring. 
 
 
@@ -48,14 +48,15 @@ Regtricks separates the two operations from each other, allowing you to apply wh
 
 
 
-===============
-How is it used?
-===============
+==================
+How does it work?
+==================
 
 Transformations
 -----------------
 
 The subclasses of ``Transformation`` represent all the different types of registration: 
+
    * ``Registration``: a linear affine registration (4x4 matrix) 
    * ``MotionCorrection``: a linear motion correction (series of 4x4 matrices) 
    * ``NonLinearRegistration``: a non-linear registration (aka warp, only FSL FNIRT currently supported) 
@@ -113,7 +114,7 @@ Note that intensity correction via Jacobian determinants for non-linear transfor
 Scipy's ``map_coordinates()`` is used to perform interpolation; this is a powerful tool that accepts many extra arguments (passed via ``**kwargs``). 
 
 FSL Wrappers 
------------
+-------------
 
 Wrappers for the standard FSL registration functions are available in ``regtricks.wrappers``. These behave slightly differently to normal
 commandline tools in that they return transformation objects. For example: ``a_flirt = rt.wrappers.flirt(src, ref)`` will run FLIRT 
