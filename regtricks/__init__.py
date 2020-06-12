@@ -2,7 +2,7 @@
 # from .image_space import ImageSpace
 
 from regtricks.image_space import ImageSpace
-from regtricks.core import Registration, MotionCorrection, NonLinearRegistration
+from regtricks.transforms import Registration, MotionCorrection, NonLinearRegistration
 from regtricks.wrappers import flirt, mcflirt, fnirt
 from regtricks.x5_interface import load_manager as load
 from regtricks.multiplication import chain

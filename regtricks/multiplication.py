@@ -31,7 +31,7 @@ def get_highest_type(first, second):
         type object of the highest class 
     """
 
-    from regtricks.core import (Registration, MotionCorrection,
+    from regtricks.transforms import (Registration, MotionCorrection,
             NonLinearMotionCorrection, NonLinearRegistration)
 
     TYPE_MAP = ({
@@ -58,7 +58,7 @@ def registration(lhs, rhs):
     Combine two Registrations, return a Registration. 
     """
 
-    from regtricks.core import Registration
+    from regtricks.transforms import Registration
 
     # lhs   rhs 
     # reg @ reg 
@@ -77,7 +77,7 @@ def moco(lhs, rhs):
     Return a MotionCorrection. 
     """
 
-    from regtricks.core import MotionCorrection, Registration
+    from regtricks.transforms import MotionCorrection, Registration
 
     # lhs   rhs 
     # reg @ MC
@@ -107,7 +107,7 @@ def nonlinearreg(lhs, rhs):
     Return a NonLinearRegistration. 
     """
 
-    from regtricks.core import (NonLinearRegistration, Registration, 
+    from regtricks.transforms import (NonLinearRegistration, Registration, 
                             MotionCorrection, NonLinearMotionCorrection)
     from regtricks.fnirt_coefficients import NonLinearProduct
 
@@ -162,7 +162,7 @@ def nonlinearmoco(lhs, rhs):
     Return a NonLinearMotionCorrection. 
     """
 
-    from regtricks.core import (NonLinearRegistration, Registration, 
+    from regtricks.transforms import (NonLinearRegistration, Registration, 
                             NonLinearMotionCorrection)
     from regtricks.fnirt_coefficients import NonLinearProduct
 
@@ -215,7 +215,7 @@ def chain(*args):
         Transform object representing the complete transformation 
     """
 
-    from regtricks.core import Transform
+    from regtricks.transforms import Transform
 
     if not all([ isinstance(r, Transform) for r in args ]):
         raise RuntimeError("Each item in sequence must be a",
@@ -238,7 +238,7 @@ def chain(*args):
 def cast_potential_array(arr):
     """Helper to convert 4x4 arrays to Registrations if not already"""
 
-    from regtricks.core import Registration, Transform
+    from regtricks.transforms import Registration, Transform
 
     if type(arr) is np.ndarray: 
         assert arr.shape == (4,4)
