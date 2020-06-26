@@ -68,7 +68,16 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
 
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
     interp = map_coordinates(data, ijk, **kwargs)
-    interp = np.clip(interp, data.min(), data.max())
+
+    if 'cval' in kwargs:
+        cval = kwargs['cval']
+        cmin = interp.min() if cval > interp.min() else cval
+        cmax = data.max() if cval < data.max() else cval 
+    else: 
+        cmin = interp.min() 
+        cmax = interp.max()
+
+    interp = np.clip(interp, cmin, cmax)
     return interp.reshape(ref_spc.size) * scale 
 
 
