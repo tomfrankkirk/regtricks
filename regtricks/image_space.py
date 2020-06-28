@@ -44,8 +44,7 @@ class ImageSpace(object):
         self.size = np.array(img.shape[:3], np.int16)
         self.vox_size = np.linalg.norm(img.affine[:3,:3], ord=2, axis=0)
         self.vox2world = img.affine
-        self.header = self.make_nifti_header()
-        self._offset = None
+        self.header = img.header
 
     
     @classmethod
@@ -56,20 +55,10 @@ class ImageSpace(object):
         spc.vox2world = vox2world
         spc.size = np.array(size, np.int16)
         spc.vox_size = np.array(vox_size)
-        spc.header = spc.make_nifti_header()
         spc._offset = None 
         spc.file_name = None 
+        self.header = None 
         return spc 
-
-
-    def make_nifti_header(self):
-        hdr = nibabel.Nifti2Header()
-        hdr.set_data_shape(self.size)
-        zooms = [*self.vox_size] + [1.0 for _ in range(3, len(self.size))]
-        hdr.set_zooms(zooms)
-        hdr.set_sform(self.vox2world, 'aligned')
-        hdr.set_xyzt_units(2, None)
-        return hdr 
 
 
     @classmethod 
@@ -160,6 +149,9 @@ class ImageSpace(object):
                 multi = 1 
             elif xyzt == '11':
                 multi = 1e-3
+
+        else: 
+            multi = 1 
 
         if det > 0:
             vox2FSL[0,0] = -self.vox_size[0]
@@ -275,8 +267,7 @@ class ImageSpace(object):
         if data.dtype is np.dtype(np.bool):
             data = data.astype(np.int8)
 
-        nii = nibabel.nifti2.Nifti2Image(data, self.vox2world, 
-            header=self.header)
+        nii = nibabel.nifti1.Nifti1Image(data, self.vox2world)
         return nii 
 
 
