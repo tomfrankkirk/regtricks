@@ -71,11 +71,11 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
 
     if 'cval' in kwargs:
         cval = kwargs['cval']
-        cmin = interp.min() if cval > interp.min() else cval
+        cmin = data.min() if cval > data.min() else cval
         cmax = data.max() if cval < data.max() else cval 
     else: 
-        cmin = interp.min() 
-        cmax = interp.max()
+        cmin = data.min() 
+        cmax = data.max()
 
     interp = np.clip(interp, cmin, cmax)
     return interp.reshape(ref_spc.size) * scale 

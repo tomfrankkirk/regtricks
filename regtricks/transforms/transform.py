@@ -102,7 +102,7 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, superlevel=1, cores=1, **kwargs):
+    def apply_to_image(self, src, ref, superlevel=1, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -116,6 +116,7 @@ class Transform(object):
                 applywarp -super behaviour). Either a single integer value, or 
                 an iterable of values for each dimension, should be given. 
             cores (int): CPU cores to use for 4D data
+            cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -123,7 +124,8 @@ class Transform(object):
         """
 
         data, creator = apply.src_load_helper(src)
-        resamp = self.apply_to_array(data, src, ref, superlevel, cores, **kwargs)
+        resamp = self.apply_to_array(data, src, ref, superlevel, 
+                                     cores, cval, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         
@@ -137,7 +139,7 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, superlevel=1, cores=1, **kwargs):
+    def apply_to_array(self, data, src, ref, superlevel=1, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -152,6 +154,7 @@ class Transform(object):
                 applywarp -super behaviour). Either a single integer value, or 
                 an iterable of values for each dimension, should be given. 
             cores (int): CPU cores to use for 4D data
+            cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -178,6 +181,7 @@ class Transform(object):
         # Force to float data 
         if data.dtype.kind != 'f': 
             data = data.astype(np.float32)
+        kwargs.update({'cval': cval})
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 
         # Sum back down if super-resolution 
