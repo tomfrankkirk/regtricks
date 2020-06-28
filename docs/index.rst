@@ -24,12 +24,6 @@ Regtricks is a python library that simplifies the process of working with and ap
 Why?
 ============
 
-Minimise interpolation
------------------------
-No matter how many registrations are combined together using ``chain()``, regtricks will only ever perform **one** interpolation step. 
-This preserves image quality by minimising interpolation-induced blurring. 
-
-
 Transformation, not interpolation 
 -----------------------------------
 Many registration tools (eg FSL) combine image *transformation* and *interpolation* into a single step, although they are **not** the same thing. 
@@ -45,6 +39,10 @@ Regtricks separates the two operations from each other, allowing you to apply wh
    Example usage of regtricks, showing the difference between transformation and interpolation. 
    From the images in the top row, three *transformations* are generated: a motion correction, a registration, and a non-linear registration. 
    On the bottom row, the transformations are applied, but the result is left *in the space of the original input* (functional resolution). 
+
+Minimise interpolation
+-----------------------
+Regtricks allows multiple transformations to be combined with a **single** interpolation step. This preserves image quality by minimising interpolation-induced blurring. 
 
 
 
