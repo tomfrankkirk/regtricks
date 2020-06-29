@@ -55,7 +55,7 @@ class FNIRTCoefficients(object):
             self.is_field = True 
             warp0 = coeffs.dataobj[0,0,0,:]
             warpN = coeffs.dataobj[-1,-1,-1,:]
-            if (np.abs(warp0 - warpN) < 0.5 * ref.FoV_size).all(): 
+            if (np.abs(warp0 - warpN) < 0.5 * ref.fov_size).all(): 
                 
                 ijk = ref.ijk_grid().reshape(-1,3)
                 ijk = aff_trans(ref.vox2FSL, ijk)

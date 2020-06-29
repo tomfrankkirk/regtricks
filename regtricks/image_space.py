@@ -57,7 +57,7 @@ class ImageSpace(object):
         spc.vox_size = np.array(vox_size)
         spc._offset = None 
         spc.file_name = None 
-        self.header = None 
+        spc.header = None 
         return spc 
 
 
@@ -100,7 +100,7 @@ class ImageSpace(object):
 
 
     @property
-    def FoV_size(self):
+    def fov_size(self):
         """FoV associated with image, in mm"""
 
         return self.size * self.vox_size
