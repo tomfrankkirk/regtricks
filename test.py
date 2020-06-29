@@ -3,6 +3,8 @@ import numpy as np
 import nibabel
 from nibabel import Nifti2Image, MGHImage
 from fsl.data.image import Image as FSLImage
+import tempfile 
+import os.path as op 
 
 LAST_ROW = [0,0,0,1]
 MAT = np.vstack((np.random.rand(3,4), LAST_ROW))
@@ -25,6 +27,30 @@ ASLT = TD + 'asl_target.nii.gz'
 ASL = TD + 'asl.nii.gz'
 BRAIN = TD + 'brain.nii.gz'
 MNI = TD + 'MNI152_T1_2mm.nii.gz'
+
+
+def load_mc_reshaped():
+    with tempfile.TemporaryDirectory() as d: 
+        mats = [ np.eye(4) for _ in range(10) ]
+        mats = np.concatenate(mats, axis=0)
+        path = op.join(d, 'mats.txt')
+        np.savetxt(path, mats)
+        mc = rt.MotionCorrection(path)
+        assert all([
+            np.array_equal(np.eye(4), x.src2ref) for x in mc.transforms
+        ])
+
+
+def save_volume():
+    with tempfile.TemporaryDirectory() as d: 
+        p = op.join(d, 'vol.nii.gz')
+        v = np.random.random(SPC1.size)
+        SPC1.save_image(v, p)
+
+
+def resize_spc_voxels():
+    x = SPC1.resize_voxels(2)
+    assert np.array_equal(x.fov_size, SPC1.fov_size)
 
 
 def test_create_identity():
@@ -180,4 +206,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    test_mcflirt_shape_casting()
+    resize_spc_voxels()
