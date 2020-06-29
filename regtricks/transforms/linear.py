@@ -168,9 +168,17 @@ class MotionCorrection(Registration):
         Transform.__init__(self)
 
         if isinstance(mats, str):
-            mats = sorted(glob.glob(op.join(mats, '*')))
-            if not mats: 
-                raise RuntimeError("Did not find any matrices in %s" % mats)
+            if op.isdir(mats): 
+                mats = sorted(glob.glob(op.join(mats, '*')))
+                if not mats: 
+                    raise RuntimeError("Did not find any matrices in %s" % mats)
+            else: 
+                mat = np.loadtxt(mats)
+                if mat.shape[0] % 4: 
+                    raise ValueError("Matrix loaded from %s " % mats, 
+                                     "should be sized (4xN) x 4.")
+                mats = [ mat[i*4:(i+1)*4,:] for i in range(mat.shape[0] // 4) ]
+
             
         self.__transforms = []
         for mat in mats:
