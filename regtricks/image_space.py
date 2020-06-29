@@ -141,7 +141,7 @@ class ImageSpace(object):
 
         # Check the xyzt field to find the spatial units. 
         multi = 1 
-        if self.header is not None: 
+        if (self.header is not None) and ('xyzt_units' in self.header):
             xyzt = str(self.header['xyzt_units'])
             if xyzt == '01': 
                 multi = 1000
