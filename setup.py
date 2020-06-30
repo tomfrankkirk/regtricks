@@ -22,15 +22,14 @@ def git_version():
         full_version = subprocess.check_output('git describe', shell=True).decode("utf-8").strip(" \n")
 
         # Python standardized version in form major.minor.patch.post<build>
-        version_regex = re.compile(r"v[0-9]+(\.[0-9]+)*-\d*")
+        version_regex = re.compile(r"v?(\d+\.\d+\.\d+(-\d+)?).*")
         match = version_regex.match(full_version)
         if match:
-            std_version = match.group(0).replace("-", ".")
-            if std_version.endswith("."):
-                std_version += "0"
+            std_version = match.group(1).replace("-", ".post")
         else:
             raise RuntimeError("Failed to parse version string %s" % full_version)
         return full_version, std_version
+
     except Exception:
         # Any failure, return None. We may not be in a Git repo at all
         return None, None

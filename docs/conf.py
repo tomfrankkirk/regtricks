@@ -12,8 +12,7 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
-sys.path.insert(0, os.path.abspath('../regtricks'))
+from regtricks._version import __version__
 
 from setup import get_version
 
@@ -24,7 +23,7 @@ copyright = '2020, Tom Kirk'
 author = 'Tom Kirk'
 
 # The full version, including alpha/beta/rc tags
-release = get_version()
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
