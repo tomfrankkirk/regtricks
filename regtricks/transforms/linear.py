@@ -4,7 +4,7 @@ import glob
 import os 
 
 import nibabel
-from nibabel import Nifti2Image, MGHImage
+from nibabel import Nifti1Image, MGHImage
 import numpy as np 
 from fsl.data.image import Image as FSLImage
 

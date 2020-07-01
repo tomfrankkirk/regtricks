@@ -2,7 +2,7 @@ import os.path as op
 from textwrap import dedent
 
 import nibabel
-from nibabel import Nifti2Image, MGHImage
+from nibabel import Nifti1Image, MGHImage
 import numpy as np 
 from fsl.data.image import Image as FSLImage
 
@@ -133,7 +133,7 @@ class Transform(object):
             ret = MGHImage(resamp, ref.vox2world, ref.header)
             return ret 
         else: 
-            ret = Nifti2Image(resamp, ref.vox2world, ref.header)
+            ret = Nifti1Image(resamp, ref.vox2world, ref.header)
             if creator is FSLImage:
                 return FSLImage(ret)
             else: 
