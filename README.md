@@ -1,5 +1,7 @@
 # Regtricks
-Tools for manipulating, combining and applying image transformations.  
+Tools for manipulating, combining and applying image transformations.
+
+Install via pip: `pip install regtricks`
 
 Documentation: https://regtricks.readthedocs.io/en/latest/
 
