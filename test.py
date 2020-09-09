@@ -1,7 +1,7 @@
 import regtricks as rt 
 import numpy as np 
 import nibabel
-from nibabel import Nifti2Image, MGHImage
+from nibabel import Nifti1Image, MGHImage
 from fsl.data.image import Image as FSLImage
 import tempfile 
 import os.path as op 
@@ -118,7 +118,7 @@ def test_image_types():
 
     r = rt.Registration.identity()
     v = np.zeros((10,10,10), dtype=np.float32)
-    nii = Nifti2Image(v, np.eye(4))
+    nii = Nifti1Image(v, np.eye(4))
     mgh = MGHImage(v, np.eye(4))
     fsl = FSLImage(v, xform=np.eye(4))
 
@@ -206,4 +206,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    resize_spc_voxels()
+    test_image_types()
