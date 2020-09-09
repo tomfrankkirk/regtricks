@@ -42,19 +42,17 @@ class ImageSpace(object):
 
         self.file_name = fname     
         self.size = np.array(img.shape[:3], np.int16)
-        self.vox_size = np.linalg.norm(img.affine[:3,:3], ord=2, axis=0)
         self.vox2world = img.affine
         self.header = img.header
 
     
     @classmethod
-    def manual(cls, vox2world, size, vox_size):
+    def manual(cls, vox2world, size):
         """Manual constructor"""
 
         spc = cls.__new__(cls)
         spc.vox2world = vox2world
         spc.size = np.array(size, np.int16)
-        spc.vox_size = np.array(vox_size)
         spc._offset = None 
         spc.file_name = None 
         spc.header = None 
@@ -82,7 +80,7 @@ class ImageSpace(object):
         vox2world[(0,1,2),(0,1,2)] = vox_size
         orig = bbox_corner + (np.array((3 * [0.5])) @ vox2world[0:3,0:3])
         vox2world[0:3,3] = orig 
-        return cls.manual(vox2world, size, vox_size)
+        return cls.manual(vox2world, size)
 
 
     @classmethod
@@ -97,6 +95,12 @@ class ImageSpace(object):
         
         spc = ImageSpace(ref)
         spc.save_image(data, path)
+
+
+    @property
+    def vox_size(self):
+        """Voxel size of image"""
+        return np.linalg.norm(self.vox2world[:3,:3], ord=2, axis=0)
 
 
     @property
@@ -202,12 +206,11 @@ class ImageSpace(object):
             factor = factor * np.ones(3)
 
         new_size = rounder(self.size / factor).astype(np.int16)
-        new_vox_size = self.vox_size * factor 
         new_vox2world = copy.deepcopy(self.vox2world)
         new_vox2world[:3,:3] *= factor[None,:]
         bbox_shift = (new_vox2world[:3,:3] @ [0.5, 0.5, 0.5])
         new_vox2world[:3,3] = self.bbox_origin + bbox_shift
-        return ImageSpace.manual(new_vox2world, new_size, new_vox_size)
+        return ImageSpace.manual(new_vox2world, new_size)
 
 
     def touch(self, path, dtype=np.float32): 
