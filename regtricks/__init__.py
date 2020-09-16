@@ -6,3 +6,4 @@ from regtricks.transforms import Registration, MotionCorrection, NonLinearRegist
 from regtricks.wrappers import flirt, mcflirt, fnirt
 from regtricks.x5_interface import load_manager as load
 from regtricks.multiplication import chain
+from regtricks.application_helpers import aff_trans
