@@ -297,6 +297,23 @@ class ImageSpace(object):
         ijk = np.meshgrid(*[ np.arange(d) for d in self.size ], indexing=indexing)
         return np.stack(ijk, axis=-1)
 
+    def voxel_centres(self, indexing='ij'):
+        """
+        Return a 4D matrix of voxel centre coordinates for this space. Default
+        indexing is as for ImageSpace.ijk_grid(), which is 'ij' matrix convention.
+        See np.meshgrid for more info. 
+
+        Returns: 
+            4D array, size of this space in the first three dimensions, and 
+                stacked I,J,K in the fourth dimension.
+        """
+
+        from regtricks.application_helpers import aff_trans
+
+        ijk = self.ijk_grid(indexing).reshape(-1,3)
+        cents = aff_trans(self.vox2world, ijk)
+        return cents.reshape(*self.size, 3)
+
 
     def transform(self, reg):
         """
@@ -330,12 +347,13 @@ class ImageSpace(object):
         with np.printoptions(precision=3, formatter={'all': formatter}):
             text = (f"""\
                 ImageSpace with properties:
-                size:       {self.size}, 
-                voxel size: {self.vox_size}, 
-                vox2world:  {self.vox2world[0,:]}
-                            {self.vox2world[1,:]}
-                            {self.vox2world[2,:]}
-                            {self.vox2world[3,:]}""")
+                size:          {self.size}, 
+                voxel size:    {self.vox_size}, 
+                field of view: {self.fov_size},
+                vox2world:     {self.vox2world[0,:]}
+                               {self.vox2world[1,:]}
+                               {self.vox2world[2,:]}
+                               {self.vox2world[3,:]}""")
 
         if self.file_name: 
             text += f"""
