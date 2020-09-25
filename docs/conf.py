@@ -12,9 +12,8 @@
 #
 import os
 import sys
+sys.path.insert(1, '..')
 from regtricks._version import __version__
-
-from setup import get_version
 
 # -- Project information -----------------------------------------------------
 
