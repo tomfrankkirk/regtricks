@@ -13,7 +13,7 @@
 import os
 import sys
 sys.path.insert(1, '..')
-from regtricks._version import __version__
+from setup import get_version
 
 # -- Project information -----------------------------------------------------
 
@@ -22,7 +22,7 @@ copyright = '2020, Tom Kirk'
 author = 'Tom Kirk'
 
 # The full version, including alpha/beta/rc tags
-release = __version__
+release = get_version()
 
 
 # -- General configuration ---------------------------------------------------
