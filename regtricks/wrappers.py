@@ -99,5 +99,5 @@ def fnirt(src, ref, **kwargs):
             kwargs['cout'] = op.join(d, 'coeffs.nii.gz')
         fnirt_cmd(src, ref=ref, **kwargs)
         coeffs = nibabel.load(kwargs['cout'])
-        coeffs.get_data()
+        coeffs.get_fdata()
         return NonLinearRegistration.from_fnirt(coeffs, src, ref)

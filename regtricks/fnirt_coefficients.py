@@ -59,7 +59,7 @@ class FNIRTCoefficients(object):
                 
                 ijk = ref.ijk_grid().reshape(-1,3)
                 ijk = aff_trans(ref.vox2FSL, ijk)
-                ijk += coeffs.get_data().reshape(-1,3)
+                ijk += coeffs.get_fdata().reshape(-1,3)
                 coeffs = nibabel.Nifti1Image(ijk.reshape(*ref.size, 3), 
                          coeffs.affine, coeffs.header)
 
@@ -313,7 +313,7 @@ def get_field(coeff1, ref, coeff2=None, mid=None, post=None, jmin=None, jmax=Non
         cmd += f' --out={field} --absout'
 
         subprocess.run(cmd, shell=True)  
-        field = nibabel.load(field).get_data().reshape(-1,3)
+        field = nibabel.load(field).get_fdata().reshape(-1,3)
     return field 
 
 

@@ -119,7 +119,7 @@ class NonLinearRegistration(Transform):
                                                      newcoeffs, old_src)
             subprocess.run(cmd, shell=True)
             newcoeffs = nibabel.load(newcoeffs)
-            newcoeffs.get_data()
+            newcoeffs.get_fdata()
             inv = NonLinearRegistration(newcoeffs, old_ref, old_src)
         return inv 
 

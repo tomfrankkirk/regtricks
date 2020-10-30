@@ -146,7 +146,7 @@ def test_apply_array():
 def test_mcasl():
     r = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
     x = r.apply_to_image(ASL, ASLT, order=1)
-    t = nibabel.load(TD + 'mcasl_truth.nii.gz').get_data()
+    t = nibabel.load(TD + 'mcasl_truth.nii.gz').get_fdata()
     # nibabel.save(x, 'mcasl.nii.gz')
     assert equal_tolerance(x.dataobj, t, 0.1)
 
@@ -168,9 +168,8 @@ def test_brain2asl():
 def test_brain2MNI():
     r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
     x = r.apply_to_image(BRAIN, MNI, order=1)
-    t = nibabel.load(TD + 'brain2MNI_truth.nii.gz').get_data()
+    t = nibabel.load(TD + 'brain2MNI_truth.nii.gz').get_fdata()
     assert equal_tolerance(x.dataobj, t, 0.1)
-
 
 
 # def test_MNI2brain():
@@ -206,4 +205,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    test_image_types()
+    test_asl2brain()

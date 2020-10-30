@@ -20,7 +20,7 @@ from regtricks.image_space import ImageSpace
 def src_load_helper(src):
     if isinstance(src, str):
         src = nibabel.load(src)
-        data = src.get_data()
+        data = src.get_fdata()
     elif isinstance(src, (Nifti1Image, MGHImage)):
         data = src.dataobj
     elif isinstance(src, FSLImage):
