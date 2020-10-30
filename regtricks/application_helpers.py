@@ -66,9 +66,12 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
        (np.ndarray), sized as out_size, interpolated output 
     """
 
+    superlevel = kwargs.pop('superlevel')
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
     interp = map_coordinates(data, ijk, **kwargs)
 
+    # If the fill value has been specified, set the min/max
+    # range for clipping in light of this 
     if 'cval' in kwargs:
         cval = kwargs['cval']
         cmin = data.min() if cval > data.min() else cval
@@ -77,8 +80,16 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
         cmin = data.min() 
         cmax = data.max()
 
+    # Clip output values (arising from resampling artefacts)
     interp = np.clip(interp, cmin, cmax)
-    return interp.reshape(ref_spc.size) * scale 
+    interp = interp.reshape(ref_spc.size) * scale 
+
+    # If supersampling used, sum array blocks back down to target 
+    if (superlevel > 1).any():
+        interp = sum_array_blocks(interp, superlevel)
+        interp = interp / np.prod(superlevel[:3])
+    
+    return interp
 
 
 def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):

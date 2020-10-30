@@ -171,8 +171,8 @@ class Transform(object):
         superlevel = np.array(superlevel).round().astype(np.int16)
         if superlevel.size == 1: superlevel *= np.ones(3)
 
-        # Create super-resolution reference grid
-        if (superlevel != 1).any(): 
+        # Create super-resolution reference grid if necessary
+        if (superlevel > 1).any(): 
             ref = ref.resize_voxels(1/superlevel, 'ceil')
 
         if not (data.shape[:3] == src.size).all(): 
@@ -181,13 +181,11 @@ class Transform(object):
         # Force to float data 
         if data.dtype.kind != 'f': 
             data = data.astype(np.float32)
-        kwargs.update({'cval': cval})
+
+        kwargs.update({
+            'cval': cval,
+            'superlevel': superlevel
+            })
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 
-        # Sum back down if super-resolution 
-        if len(data.shape) == 4: superlevel = np.array((*superlevel, 1))
-        if (superlevel != 1).any():
-            resamp = apply.sum_array_blocks(resamp, superlevel)
-            resamp = resamp / np.prod(superlevel[:3])
-            
         return resamp      
