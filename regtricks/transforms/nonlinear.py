@@ -95,6 +95,7 @@ class NonLinearRegistration(Transform):
         # # 3: intensity correct both warps of a NLP  
         
         x = cls.__new__(cls)
+        Transform.__init__(x)
         assert isinstance(warp, (FNIRTCoefficients, NonLinearProduct))
         x.warp = warp
         x.premat = multiply.cast_potential_array(premat)
@@ -120,7 +121,7 @@ class NonLinearRegistration(Transform):
             subprocess.run(cmd, shell=True)
             newcoeffs = nibabel.load(newcoeffs)
             newcoeffs.get_fdata()
-            inv = NonLinearRegistration(newcoeffs, old_ref, old_src)
+            inv = NonLinearRegistration.from_fnirt(newcoeffs, old_ref, old_src)
         return inv 
 
     def premat_to_fsl(self, src, ref): 
@@ -239,7 +240,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
     def __init__(self, warp, premat, postmat, intensity_correct=0, 
                  constrain_jac=False):
         
-        Transform.__init__(self)
+        super().__init__()
         self.warp = warp
 
         assert (isinstance(premat, (Registration, np.ndarray)) 
