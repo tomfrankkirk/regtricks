@@ -190,7 +190,10 @@ def sum_array_blocks(array, factor):
     if np.any(np.mod(factor, np.ones_like(factor))):
         raise RuntimeError("factor must be of integer values only")
 
-    factor = [ int(f) for f in factor ]
+    factor = np.array(factor, dtype=np.int32)
+    if (np.mod(array.shape, factor) > 0).any(): 
+        raise RuntimeError(("Factor {} must be a perfect divisor of array shape {}".
+            format(factor, array.shape)))
 
     outshape = [ int(s/f) for (s,f) in zip(array.shape, factor) ]
     out = np.copy(array)
