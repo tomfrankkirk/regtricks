@@ -1,7 +1,7 @@
 import tempfile 
 import subprocess
 import os.path as op 
-import itertools 
+import warnings 
 
 import nibabel 
 import numpy as np 
@@ -47,19 +47,26 @@ class FNIRTCoefficients(object):
             self.constrain_jac = constrain_jac
 
         self.is_field = False 
-        if ((coeffs.header.get_intent()[0] not in 
-            [ 'fnirt cubic spline coef', 'fnirt quad spline coef' ])
-            and (coeffs.shape[:3] == ref.size).all()): 
+        if (coeffs.header.get_intent()[0] not in 
+            [ 'fnirt cubic spline coef', 'fnirt quad spline coef' ]): 
 
-            #  We have a displacement field. Force into absolute convention 
-            self.is_field = True 
+            if (coeffs.shape[:3] != ref.size).any(): 
+                raise RuntimeError("Input file seems to be a displacement field", 
+                    " but size does not match reference image")
+
             warp0 = coeffs.dataobj[0,0,0,:]
             warpN = coeffs.dataobj[-1,-1,-1,:]
-            if (np.abs(warp0 - warpN) < 0.5 * ref.fov_size).all(): 
+
+            # If the distance between the first and last displacement vector
+            # is covers a significant portion of the FoV, we probably have an 
+            # absolute displacement field
+            if (np.abs(warp0 - warpN) > 0.5 * ref.fov_size).all(): 
+                warnings.warn("NonLinearRegistration.from_fnirt(): absolute "
+                    + "displacement field detected, making relative.")
                 
                 ijk = ref.ijk_grid().reshape(-1,3)
                 ijk = aff_trans(ref.vox2FSL, ijk)
-                ijk += coeffs.get_fdata().reshape(-1,3)
+                ijk = coeffs.get_fdata().reshape(-1,3) - ijk
                 coeffs = nibabel.Nifti1Image(ijk.reshape(*ref.size, 3), 
                          coeffs.affine, coeffs.header)
 
