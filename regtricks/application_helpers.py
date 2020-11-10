@@ -66,9 +66,14 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
        (np.ndarray), sized as out_size, interpolated output 
     """
 
+    # We transform a bool mask along with the input data to guard
+    # against spline interpolation artefacts in the transformed data 
     superlevel = kwargs.pop('superlevel')
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
+    mask = data.astype(np.bool).astype(np.float32)
     interp = map_coordinates(data, ijk, **kwargs)
+    interp_mask = map_coordinates(mask, ijk, order=0)
+    interp_mask = interp_mask.astype(np.bool)
 
     # If the fill value has been specified, set the min/max
     # range for clipping in light of this 
@@ -80,8 +85,10 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
         cmin = data.min() 
         cmax = data.max()
 
-    # Clip output values (arising from resampling artefacts)
+    # Clip output values to the required min max, and remask the data
+    # to remove spline artefacts
     interp = np.clip(interp, cmin, cmax)
+    interp[~interp_mask] = 0
     interp = interp.reshape(ref_spc.size) * scale 
 
     # If supersampling used, sum array blocks back down to target 
