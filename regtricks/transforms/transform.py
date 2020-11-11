@@ -102,7 +102,7 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, superlevel=1, cores=1, cval=0.0, **kwargs):
+    def apply_to_image(self, src, ref, superlevel=True, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -111,10 +111,11 @@ class Transform(object):
         Args:   
             src (str/NII/MGZ/FSLImage): image to transform 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superlevel (int/iterable): resample onto a super-resolution copy
-                of the reference grid and sum back down to target (replicates
-                applywarp -super behaviour). Either a single integer value, or 
-                an iterable of values for each dimension, should be given. 
+            superlevel (bool/int/iterable): default True (automatic);             
+                intermediate super-sampling (replicates applywarp -super), 
+                enabled by default when resampling from high to low resolution. 
+                Set as False to disable, or set an int/iterable to specify 
+                level for each image dimension. 
             cores (int): CPU cores to use for 4D data
             cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
@@ -139,7 +140,7 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, superlevel=1, cores=1, cval=0.0, **kwargs):
+    def apply_to_array(self, data, src, ref, superlevel=True, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -149,10 +150,11 @@ class Transform(object):
             data (array): 3D or 4D array. 
             src (str/NII/MGZ/FSLImage/ImageSpace): current space of data 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superlevel (int/iterable): resample onto a super-resolution copy
-                of the reference grid and sum back down to target (replicates
-                applywarp -super behaviour). Either a single integer value, or 
-                an iterable of values for each dimension, should be given. 
+            superlevel (bool/int/iterable): default True (automatic);             
+                intermediate super-sampling (replicates applywarp -super), 
+                enabled by default when resampling from high to low resolution. 
+                Set as False to disable, or set an int/iterable to specify 
+                level for each image dimension. 
             cores (int): CPU cores to use for 4D data
             cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
@@ -166,13 +168,18 @@ class Transform(object):
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
 
-        # Force superlevel into an integer array of length 3 for 3D data 
-        # or array of (XYZ,1) for 4D data 
-        superlevel = np.array(superlevel).round().astype(np.int16)
-        if superlevel.size == 1: superlevel *= np.ones(3)
-
         # Create super-resolution reference grid if necessary
-        if (superlevel > 1).any(): 
+        # Automatic is to use the ratio of input / output voxel size 
+        if superlevel != False: 
+            if superlevel == True: 
+                if (src.vox_size < ref.vox_size).any(): 
+                    superlevel = np.floor(ref.vox_size / src.vox_size)
+                else: 
+                    superlevel = 1 
+
+            # Force superlevel into an integer array of length 3
+            superlevel = np.array(superlevel).round().astype(np.int16)
+            if superlevel.size == 1: superlevel *= np.ones(3)
             ref = ref.resize_voxels(1/superlevel, 'ceil')
 
         if not (data.shape[:3] == src.size).all(): 
