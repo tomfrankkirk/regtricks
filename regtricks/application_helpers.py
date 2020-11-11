@@ -153,7 +153,7 @@ def despatch(data, transform, src_spc, ref_spc, cores, **kwargs):
     # Reset the cache on the transform to be safe. 
     transform.reset_cache()
     resamp = np.stack(resamp, axis=3)
-    if resamp.shape[3] > 1: 
+    if resamp.shape[3] == 1: 
         resamp = np.squeeze(resamp, axis=3) 
     return resamp
 
