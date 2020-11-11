@@ -188,6 +188,11 @@ def test_asl2MNI():
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
+def test_fnirt_inv():
+    MNI2brain = rt.NonLinearRegistration.from_fnirt(
+            TD + 'MNI2brain_coeffs.nii.gz', MNI, BRAIN)
+    brain2MNI = MNI2brain.inverse()
+
 # def test_mcasl2brain():
 #     r1 = rt.rt.MotionCorrection.from_mcflirt('testdata/asl_mcf.mat', ASLT, ASLT)
 #     r2 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
@@ -205,4 +210,4 @@ def test_asl2MNI():
 
 
 if __name__ == "__main__":
-    test_asl2brain()
+    test_fnirt_inv()
