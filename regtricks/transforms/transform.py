@@ -181,6 +181,8 @@ class Transform(object):
             superlevel = np.array(superlevel).round().astype(np.int16)
             if superlevel.size == 1: superlevel *= np.ones(3)
             ref = ref.resize_voxels(1/superlevel, 'ceil')
+        else: 
+            superlevel = np.ones(3) 
 
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
