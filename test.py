@@ -49,7 +49,7 @@ def save_volume():
 
 
 def resize_spc_voxels():
-    x = SPC1.resize_voxels(2)
+    x = SPC1.resize_voxels((2,2,2))
     assert np.array_equal(x.fov_size, SPC1.fov_size)
 
 
@@ -160,7 +160,7 @@ def test_asl2brain():
 
 def test_brain2asl():
     r = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
-    x = r.inverse().apply_to_image(BRAIN, ASLT, order=1)
+    x = r.inverse().apply_to_image(BRAIN, ASLT)
     t = nibabel.load(TD + 'brain2asl_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
@@ -210,4 +210,4 @@ def test_fnirt_inv():
 
 
 if __name__ == "__main__":
-    test_fnirt_inv()
+    resize_spc_voxels()

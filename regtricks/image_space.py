@@ -202,7 +202,8 @@ class ImageSpace(object):
         else: 
             rounder = np.ceil 
       
-        if isinstance(factor, (int, float)):
+        factor = np.array(factor)
+        if factor.size == 1:
             factor = factor * np.ones(3)
 
         new_size = rounder(self.size / factor).astype(np.int16)
