@@ -102,7 +102,7 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, superlevel=True, cores=1, cval=0.0, **kwargs):
+    def apply_to_image(self, src, ref, superfactor=True, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -111,7 +111,7 @@ class Transform(object):
         Args:   
             src (str/NII/MGZ/FSLImage): image to transform 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superlevel (bool/int/iterable): default True (automatic);             
+            superfactor (bool/int/iterable): default True (automatic);             
                 intermediate super-sampling (replicates applywarp -super), 
                 enabled by default when resampling from high to low resolution. 
                 Set as False to disable, or set an int/iterable to specify 
@@ -125,7 +125,7 @@ class Transform(object):
         """
 
         data, creator = apply.src_load_helper(src)
-        resamp = self.apply_to_array(data, src, ref, superlevel, 
+        resamp = self.apply_to_array(data, src, ref, superfactor, 
                                      cores, cval, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
@@ -140,7 +140,7 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, superlevel=True, cores=1, cval=0.0, **kwargs):
+    def apply_to_array(self, data, src, ref, superfactor=True, cores=1, cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -150,7 +150,7 @@ class Transform(object):
             data (array): 3D or 4D array. 
             src (str/NII/MGZ/FSLImage/ImageSpace): current space of data 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superlevel (bool/int/iterable): default True (automatic);             
+            superfactor (bool/int/iterable): default True (automatic);             
                 intermediate super-sampling (replicates applywarp -super), 
                 enabled by default when resampling from high to low resolution. 
                 Set as False to disable, or set an int/iterable to specify 
@@ -170,19 +170,19 @@ class Transform(object):
 
         # Create super-resolution reference grid if necessary
         # Automatic is to use the ratio of input / output voxel size 
-        if superlevel != False: 
-            if superlevel == True: 
+        if superfactor != False: 
+            if superfactor == True: 
                 if (src.vox_size < ref.vox_size).any(): 
-                    superlevel = np.floor(ref.vox_size / src.vox_size)
+                    superfactor = np.ceil(ref.vox_size / src.vox_size)
                 else: 
-                    superlevel = 1 
+                    superfactor = 1 
 
-            # Force superlevel into an integer array of length 3
-            superlevel = np.array(superlevel).round().astype(np.int16)
-            if superlevel.size == 1: superlevel *= np.ones(3)
-            ref = ref.resize_voxels(1/superlevel, 'ceil')
+            # Force superfactor into an integer array of length 3
+            superfactor = np.array(superfactor).round().astype(np.int16)
+            if superfactor.size == 1: superfactor *= np.ones(3)
+            ref = ref.resize_voxels(1/superfactor, 'ceil')
         else: 
-            superlevel = np.ones(3) 
+            superfactor = np.ones(3) 
 
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
@@ -193,7 +193,7 @@ class Transform(object):
 
         kwargs.update({
             'cval': cval,
-            'superlevel': superlevel
+            'superfactor': superfactor
             })
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 

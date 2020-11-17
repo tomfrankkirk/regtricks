@@ -216,7 +216,7 @@ class NonLinearRegistration(Transform):
                 dj = det_jacobian(dfield1.reshape(*ref.size, 3), ref.vox_size)
                 successor = NonLinearRegistration._manual_construct(self.warp.warp2, premat=self.warp.midmat, 
                     postmat=self.postmat, intensity_correct=False)
-                scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
+                scale = successor.apply_to_array(dj, ref, ref, cores=1, superfactor=1)
 
         return (ijk, scale)
 
@@ -341,7 +341,7 @@ class NonLinearMotionCorrection(NonLinearRegistration):
                 dj = det_jacobian(df.reshape(*ref.size, 3), ref.vox_size)
                 successor = NonLinearRegistration._manual_construct(self.warp.warp2, self.warp.warp2.src_spc, 
                     self.warp.warp2.ref_spc, premat=self.warp.midmat[at_idx], postmat=self.postmat[at_idx])
-                scale = successor.apply_to_array(dj, ref, ref, cores=1, superlevel=1)
+                scale = successor.apply_to_array(dj, ref, ref, cores=1, superfactor=1)
 
         return (ijk, scale)
        

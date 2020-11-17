@@ -100,7 +100,7 @@ Applying
 
 Transformations are applied with the ``apply_to_image(src, ref)`` method, where ``src`` is the input image and ``ref`` is the space in which to place the output (which could be the same as ``src``). This function also accepts numerous extra arguments, for example: 
 
-   - ``superlevel``: intermediate super-sampling factor (similar to FSL applywarp)
+   - ``superfactor``: intermediate super-sampling factor (similar to FSL applywarp)
    - ``order``: order of spline interpolant, 1-5, default 3
    - ``cores``: multi-core processing to speed up 4D images 
    - ``**kwargs``: any args accepted by ``map_coordinates()``

@@ -68,7 +68,7 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
 
     # We transform a bool mask along with the input data to guard
     # against spline interpolation artefacts in the transformed data 
-    superlevel = kwargs.pop('superlevel')
+    superfactor = kwargs.pop('superfactor')
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
     mask = data.astype(np.bool).astype(np.float32)
     interp = map_coordinates(data, ijk, **kwargs)
@@ -92,9 +92,9 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
     interp = interp.reshape(ref_spc.size) * scale 
 
     # If supersampling used, sum array blocks back down to target 
-    if (superlevel > 1).any():
-        interp = sum_array_blocks(interp, superlevel)
-        interp = interp / np.prod(superlevel[:3])
+    if (superfactor > 1).any():
+        interp = sum_array_blocks(interp, superfactor)
+        interp = interp / np.prod(superfactor[:3])
     
     return interp
 
