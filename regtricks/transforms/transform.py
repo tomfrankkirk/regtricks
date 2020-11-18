@@ -169,20 +169,20 @@ class Transform(object):
             ref = ImageSpace(ref)
 
         # Create super-resolution reference grid if necessary
-        # Automatic is to use the ratio of input / output voxel size 
+        # Automatic is to use the ratio of input / output voxel size + 1 
         if superfactor != False: 
             if superfactor == True: 
                 if (src.vox_size < ref.vox_size).any(): 
-                    superfactor = np.ceil(ref.vox_size / src.vox_size)
+                    superfactor = np.ceil(ref.vox_size / src.vox_size) + 1
                 else: 
                     superfactor = 1 
 
             # Force superfactor into an integer array of length 3
             superfactor = np.array(superfactor).round().astype(np.int16)
             if superfactor.size == 1: superfactor *= np.ones(3)
-            ref = ref.resize_voxels(1/superfactor, 'ceil')
+            ref = ref.resize_voxels(1 / superfactor, 'ceil')
         else: 
-            superfactor = np.ones(3) 
+            superfactor = np.ones(3, dtype=np.int16) 
 
         if not (data.shape[:3] == src.size).all(): 
             raise RuntimeError("Data shape does not match source space")
