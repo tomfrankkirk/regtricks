@@ -40,7 +40,7 @@ class ImageSpace(object):
                 img = img.nibImage
             fname = img.get_filename()
 
-        self.file_name = fname     
+        self.fname = fname     
         self.size = np.array(img.shape[:3], np.int16)
         self.vox2world = img.affine
         self.header = img.header
@@ -54,7 +54,7 @@ class ImageSpace(object):
         spc.vox2world = vox2world
         spc.size = np.array(size, np.int16)
         spc._offset = None 
-        spc.file_name = None 
+        spc.fname = None 
         spc.header = None 
         return spc 
 
@@ -167,6 +167,14 @@ class ImageSpace(object):
 
 
     @property
+    def file_name(self):
+        if self.fname is not None: 
+            return self.fname
+        else: 
+            return "<ImageSpace not created from file path>"
+
+
+    @property
     def FSL2vox(self):
         """Transformation from FSL scaled coordinates to voxels"""
         return np.linalg.inv(self.vox2FSL)
@@ -251,7 +259,7 @@ class ImageSpace(object):
         new_orig = self.vox2world[0:3,3] + (self.vox2world[0:3,0:3] @ start) 
         new.vox2world[0:3,3] = new_orig
         new.size = new_size 
-        new.file_name = None 
+        new.fname = None 
         return new 
 
 
@@ -339,7 +347,7 @@ class ImageSpace(object):
 
         new_spc = copy.deepcopy(self)
         new_spc.vox2world = reg @ new_spc.vox2world
-        new_spc.file_name = None 
+        new_spc.fname = None 
         return new_spc
 
 
@@ -354,17 +362,10 @@ class ImageSpace(object):
                 vox2world:     {self.vox2world[0,:]}
                                {self.vox2world[1,:]}
                                {self.vox2world[2,:]}
-                               {self.vox2world[3,:]}""")
+                               {self.vox2world[3,:]}
+                loaded from:   {self.file_name}""")
 
-        if self.file_name: 
-            text += f"""
-                loaded from: {self.file_name}"""
-        else: 
-            text += f"""
-                loaded from: (no direct file counterpart)"""
-        return textwrap.dedent(text)
 
-    
     def __eq__(self, other):
 
         f1 = np.allclose(self.vox2world, other.vox2world)
