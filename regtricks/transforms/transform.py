@@ -1,7 +1,7 @@
 import os.path as op 
 from textwrap import dedent
+from multiprocessing import cpu_count
 
-import nibabel
 from nibabel import Nifti1Image, MGHImage
 import numpy as np 
 from fsl.data.image import Image as FSLImage
@@ -102,7 +102,8 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, superfactor=True, cores=1, cval=0.0, **kwargs):
+    def apply_to_image(self, src, ref, superfactor=True, 
+                        cores=cpu_count(), cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -140,7 +141,8 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, superfactor=True, cores=1, cval=0.0, **kwargs):
+    def apply_to_array(self, data, src, ref, superfactor=True, 
+                        cores=cpu_count(), cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -173,7 +175,7 @@ class Transform(object):
         if superfactor != False: 
             if superfactor == True: 
                 if (src.vox_size < ref.vox_size).any(): 
-                    superfactor = np.ceil(ref.vox_size / src.vox_size) + 1
+                    superfactor = np.ceil(ref.vox_size / src.vox_size)
                 else: 
                     superfactor = 1 
 
@@ -190,6 +192,12 @@ class Transform(object):
         # Force to float data 
         if data.dtype.kind != 'f': 
             data = data.astype(np.float32)
+
+        # Only use multiprocessing on 4D data 
+        if data.ndim == 3: 
+            cores = 1 
+        else: 
+            cores = min([cores, data.shape[-1]])
 
         kwargs.update({
             'cval': cval,
