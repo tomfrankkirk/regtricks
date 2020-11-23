@@ -33,8 +33,7 @@ class NonLinearRegistration(Transform):
             be used, or explicit limits can be given as (min, max)
     """
 
-    def __init__(self, warp, src, ref, intensity_correct=False, 
-                 constrain_jac=False):
+    def __init__():
 
         raise NotImplementedError("Currently only FNIRT supported, use "
                                 "NonLinearRegistration.from_fnirt() instead")
@@ -240,7 +239,6 @@ class NonLinearMotionCorrection(NonLinearRegistration):
     def __init__(self, warp, premat, postmat, intensity_correct=0, 
                  constrain_jac=False):
         
-        super().__init__()
         self.warp = warp
 
         assert (isinstance(premat, (Registration, np.ndarray)) 

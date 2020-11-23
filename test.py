@@ -147,8 +147,7 @@ def test_mcasl():
     r = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
     x = r.apply_to_image(ASL, ASLT, order=1)
     t = nibabel.load(TD + 'mcasl_truth.nii.gz').get_fdata()
-    # nibabel.save(x, 'mcasl.nii.gz')
-    assert equal_tolerance(x.dataobj, t, 0.1)
+    assert equal_tolerance(x.dataobj, t, 0.01)
 
 
 def test_asl2brain():
@@ -169,16 +168,16 @@ def test_brain2MNI():
     r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
     x = r.apply_to_image(BRAIN, MNI, order=1)
     t = nibabel.load(TD + 'brain2MNI_truth.nii.gz').get_fdata()
-    assert equal_tolerance(x.dataobj, t, 0.1)
+    assert equal_tolerance(x.dataobj, t, 0.01)
 
 
-# def test_MNI2brain():
-#     r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
-#     x = r.inverse().apply_to_image(MNI, BRAIN, order=1)
-#     t = nibabel.load(TD + 'MNI2brain_truth.nii.gz').dataobj
-#     # nibabel.save(x, 'MNI2brain.nii.gz')
-#     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
- 
+def test_MNI2brain():
+    r = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+    x = r.inverse().apply_to_image(MNI, BRAIN, order=1)
+    t = nibabel.load(TD + 'MNI2brain_truth.nii.gz').dataobj
+    # nibabel.save(x, 'MNI2brain.nii.gz')
+    assert (t - x.dataobj < 0.01 * np.max(t)).all() 
+
 
 def test_asl2MNI():
     r1 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
@@ -188,17 +187,28 @@ def test_asl2MNI():
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
-def test_fnirt_inv():
-    MNI2brain = rt.NonLinearRegistration.from_fnirt(
-            TD + 'MNI2brain_coeffs.nii.gz', MNI, BRAIN)
-    brain2MNI = MNI2brain.inverse()
+def test_aslmc2MNI():
+    mc = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
+    r1 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
+    r2 = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
+    chained = rt.chain(mc, r1, r2)
+    x = chained.apply_to_image(ASL, MNI)
+    t = nibabel.load(TD + 'aslmc2MNI_truth.nii.gz').dataobj
+    assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
-# def test_mcasl2brain():
-#     r1 = rt.rt.MotionCorrection.from_mcflirt('testdata/asl_mcf.mat', ASLT, ASLT)
-#     r2 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
-#     x = rt.chain(r1, r2).apply_to_image(ASL, BRAIN, order=1)
-#     t = nibabel.load(TD + 'mcasl2brain_truth.nii.gz').dataobj
-#     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
+
+def test_mcasl2brain():
+    r1 = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
+    r2 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
+    x = rt.chain(r1, r2).apply_to_image(ASL, BRAIN, order=1)
+    t = nibabel.load(TD + 'mcasl2brain_truth.nii.gz').dataobj
+    assert (t - x.dataobj < 0.01 * np.max(t)).all() 
+
+
+# def test_fnirt_inv():
+#     MNI2brain = rt.NonLinearRegistration.from_fnirt(
+#             TD + 'MNI2brain_coeffs.nii.gz', MNI, BRAIN)
+#     brain2MNI = MNI2brain.inverse()
 
 
 # def test_brain2MNI2brain():
@@ -210,4 +220,4 @@ def test_fnirt_inv():
 
 
 if __name__ == "__main__":
-    resize_spc_voxels()
+    test_aslmc2MNI()
