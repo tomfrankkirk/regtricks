@@ -94,7 +94,7 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
     # If supersampling used, sum array blocks back down to target 
     if (superfactor > 1).any():
         interp = sum_array_blocks(interp, superfactor)
-        interp = interp / np.prod(superfactor[:3])
+        interp = interp / np.prod(superfactor)
     
     return interp
 
