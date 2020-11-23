@@ -363,6 +363,7 @@ class ImageSpace(object):
                                {self.vox2world[3,:]}
                 loaded from:   {self.file_name}""")
 
+        return text 
 
     def __eq__(self, other):
 
