@@ -26,7 +26,6 @@ class ImageSpace(object):
         vox_size: array of voxel size in each dimension 
         vox2world: 4x4 affine to transform voxel coords -> world
         world2vox: inverse of above 
-        self.offset: private variable used for derived spaces 
     """
 
     def __init__(self, img):
@@ -53,7 +52,6 @@ class ImageSpace(object):
         spc = cls.__new__(cls)
         spc.vox2world = vox2world
         spc.size = np.array(size, np.int16)
-        spc._offset = None 
         spc.fname = None 
         spc.header = None 
         return spc 
