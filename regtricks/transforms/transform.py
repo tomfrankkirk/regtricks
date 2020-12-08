@@ -102,7 +102,7 @@ class Transform(object):
         else: 
             raise NotImplementedError("Not Transformation objects")
 
-    def apply_to_image(self, src, ref, superfactor=True, 
+    def apply_to_image(self, src, ref, order=3, superfactor=True, 
                         cores=cpu_count(), cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
@@ -112,11 +112,12 @@ class Transform(object):
         Args:   
             src (str/NII/MGZ/FSLImage): image to transform 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superfactor (bool/int/iterable): default True (automatic);             
-                intermediate super-sampling (replicates applywarp -super), 
-                enabled by default when resampling from high to low resolution. 
-                Set as False to disable, or set an int/iterable to specify 
-                level for each image dimension. 
+            order (int): 0 for NN, 1 for linear, 2-5 for splines. 
+            superfactor (bool/int/iterable): default True for any order > 0,
+                (chosen automatically); intermediate super-sampling (replicates
+                applywarp -super), enabled by default when resampling from 
+                high to low resolution. Set as False to disable, or set an 
+                int/iterable to manually specify level for each image dimension. 
             cores (int): CPU cores to use for 4D data
             cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
@@ -126,7 +127,7 @@ class Transform(object):
         """
 
         data, creator = apply.src_load_helper(src)
-        resamp = self.apply_to_array(data, src, ref, superfactor, 
+        resamp = self.apply_to_array(data, src, ref, order, superfactor, 
                                      cores, cval, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
@@ -141,7 +142,7 @@ class Transform(object):
             else: 
                 return ret 
 
-    def apply_to_array(self, data, src, ref, superfactor=True, 
+    def apply_to_array(self, data, src, ref, order=3, superfactor=True,
                         cores=cpu_count(), cval=0.0, **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
@@ -152,11 +153,12 @@ class Transform(object):
             data (array): 3D or 4D array. 
             src (str/NII/MGZ/FSLImage/ImageSpace): current space of data 
             ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
-            superfactor (bool/int/iterable): default True (automatic);             
-                intermediate super-sampling (replicates applywarp -super), 
-                enabled by default when resampling from high to low resolution. 
-                Set as False to disable, or set an int/iterable to specify 
-                level for each image dimension. 
+            order (int): 0 for NN, 1 for linear, 2-5 for splines. 
+            superfactor (bool/int/iterable): default True for any order > 0,
+                (chosen automatically); intermediate super-sampling (replicates
+                applywarp -super), enabled by default when resampling from 
+                high to low resolution. Set as False to disable, or set an 
+                int/iterable to manually specify level for each image dimension. 
             cores (int): CPU cores to use for 4D data
             cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
@@ -171,14 +173,17 @@ class Transform(object):
             ref = ImageSpace(ref)
 
         # Create super-resolution reference grid if necessary
-        # Automatic is to use the ratio of input / output voxel size + 1 
+        # Automatic is to use the ratio of input / output voxel size,
+        # but for NN we leave it at 1 unless the user has expressly
+        # set a factor. 
         if superfactor is not (False): 
             if superfactor is True: 
-                if (src.vox_size < ref.vox_size).any(): 
+                if (src.vox_size < ref.vox_size).any() and (order != 0): 
                     superfactor = np.ceil(ref.vox_size / src.vox_size)
                 else: 
                     superfactor = 1 
 
+            # Manually specified 
             # Force superfactor into an integer array of length 3
             superfactor = np.array(superfactor).round() * np.ones(3)
         else: 
@@ -206,7 +211,8 @@ class Transform(object):
 
         kwargs.update({
             'cval': cval,
-            'superfactor': superfactor
+            'superfactor': superfactor,
+            'order': order
             })
         resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
 
