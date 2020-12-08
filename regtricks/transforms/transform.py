@@ -197,7 +197,8 @@ class Transform(object):
             ref = ref.resize_voxels(1 / superfactor, 'ceil')
 
         if not (data.shape[:3] == src.size).all(): 
-            raise RuntimeError("Data shape does not match source space")
+            raise RuntimeError("Data shape {} does not match source space {}"
+                                .format(data.shape, src.size))
 
         # Force to float data 
         if data.dtype.kind != 'f': 
