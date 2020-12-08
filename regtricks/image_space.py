@@ -6,7 +6,7 @@ into the space of an image)
 """
 
 import copy 
-import textwrap
+from textwrap import dedent
 
 import nibabel
 import numpy as np 
@@ -352,7 +352,7 @@ class ImageSpace(object):
     def __repr__(self):
         formatter = "{:8.3f}".format 
         with np.printoptions(precision=3, formatter={'all': formatter}):
-            text = (f"""\
+            text = dedent(f"""\
                 ImageSpace with properties:
                 size:          {self.size}, 
                 voxel size:    {self.vox_size}, 
