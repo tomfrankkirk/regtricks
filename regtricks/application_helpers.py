@@ -22,7 +22,7 @@ def src_load_helper(src):
         src = nibabel.load(src)
         data = src.get_fdata()
     elif isinstance(src, (Nifti1Image, MGHImage)):
-        data = src.dataobj
+        data = src.get_fdata()
     elif isinstance(src, FSLImage):
         data = src.data
     else: 
