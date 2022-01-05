@@ -188,7 +188,7 @@ class Transform(object):
             superfactor = np.array(superfactor).round() * np.ones(3)
         else: 
             superfactor = np.ones(3)
-        superfactor = superfactor.astype(np.int16)
+        superfactor = superfactor.astype(int)
 
         if (superfactor < 1).any(): 
             raise ValueError("Superfactor must be integer > 0")
@@ -202,7 +202,7 @@ class Transform(object):
 
         # Force to float data 
         if data.dtype.kind != 'f': 
-            data = data.astype(np.float32)
+            data = data.astype(float)
 
         # Only use multiprocessing on 4D data 
         if data.ndim == 3: 

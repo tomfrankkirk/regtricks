@@ -40,7 +40,7 @@ class ImageSpace(object):
             fname = img.get_filename()
 
         self.fname = fname     
-        self.size = np.array(img.shape[:3], np.int16)
+        self.size = np.array(img.shape[:3], dtype=int)
         self.vox2world = img.affine
         self.header = img.header
 
@@ -51,7 +51,7 @@ class ImageSpace(object):
 
         spc = cls.__new__(cls)
         spc.vox2world = vox2world
-        spc.size = np.array(size, np.int16)
+        spc.size = np.array(size, dtype=int)
         spc.fname = None 
         spc.header = None 
         return spc 
@@ -212,7 +212,7 @@ class ImageSpace(object):
         if factor.size == 1:
             factor = factor * np.ones(3)
 
-        new_size = rounder(self.size / factor).astype(np.int16)
+        new_size = rounder(self.size / factor).astype(int)
         new_vox2world = copy.deepcopy(self.vox2world)
         new_vox2world[:3,:3] *= factor[None,:]
         bbox_shift = (new_vox2world[:3,:3] @ [0.5, 0.5, 0.5])
@@ -220,7 +220,7 @@ class ImageSpace(object):
         return ImageSpace.manual(new_vox2world, new_size)
 
 
-    def touch(self, path, dtype=np.float32): 
+    def touch(self, path, dtype=float): 
         """Save empty volume at path"""
         vol = np.zeros(self.size, dtype)
         self.save_image(vol, path)
@@ -274,7 +274,7 @@ class ImageSpace(object):
             else:
                 raise RuntimeError("Data size does not match image size")
 
-        if data.dtype is np.dtype(np.bool):
+        if data.dtype is np.dtype(bool):
             data = data.astype(np.int8)
 
         nii = nibabel.nifti1.Nifti1Image(data, self.vox2world)
