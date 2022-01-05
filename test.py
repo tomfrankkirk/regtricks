@@ -220,4 +220,4 @@ def test_mcasl2brain():
 
 
 if __name__ == "__main__":
-    test_aslmc2MNI()
+    test_brain2MNI()

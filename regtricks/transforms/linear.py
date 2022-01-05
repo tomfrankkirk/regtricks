@@ -148,7 +148,7 @@ class Registration(Transform):
         # Array of all voxel indices in the reference grid
         # Map them into world coordinates, apply the transform
         # and then into source voxel coordinates for the interpolation 
-        ref2src_vox = (src.world2vox @ self.ref2src @ ref.vox2world)
+        ref2src_vox = ((src.world2vox @ self.ref2src) @ ref.vox2world)
         ijk = apply.aff_trans(ref2src_vox, self.cache).T
         scale = 1 
         return (ijk, scale)
