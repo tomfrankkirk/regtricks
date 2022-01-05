@@ -47,8 +47,7 @@ class FNIRTCoefficients(object):
             self.constrain_jac = constrain_jac
 
         self.is_field = False 
-        if (coeffs.header.get_intent()[0] not in 
-            [ 'fnirt cubic spline coef', 'fnirt quad spline coef' ]): 
+        if 'spline coef' not in coeffs.header.get_intent()[0]: 
 
             if (coeffs.shape[:3] != ref.size).any(): 
                 raise RuntimeError("Input file seems to be a displacement field", 
