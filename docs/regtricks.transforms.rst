@@ -28,7 +28,6 @@ regtricks.transforms.transform module
    :undoc-members:
    :show-inheritance:
 
-
 Module contents
 ---------------
 

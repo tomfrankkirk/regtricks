@@ -4,21 +4,36 @@ Regtricks
 
 Tools for manipulating, combining and applying registrations. 
 
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+   :hidden: 
+
+   Overview <self>
+   quickstart
+   fsl
+   contributing
+   Module index <modules> 
+   genindex
+
+
 ============
 What is it?
 ============
 
 Regtricks is a python library that simplifies the process of working with and applying image registrations. **It is not** a replacement for image registration tools (eg FSL FLIRT), but it does make working with the output of these tools eaiser. It offers: 
 
-* an **object oriented** interface: ``Registration``, ``MotionCorrection``, ``NonLinearRegistration`` 
-* easy **combining of multiple transforms** via ``chain()``
+* an **object oriented** interface: :class:`~regtricks.transforms.linear.Registration`, :class:`~regtricks.transforms.linear.MotionCorrection`, :class:`~regtricks.transforms.nonlinear.NonLinearRegistration` 
+* easy **combining of multiple transforms** via :func:`~regtricks.multiplication.chain()`
 * **one interpolation step** for image data, regardless of the number of transforms that need to be applied 
-* **separation between transformation and interpolation**: generate a registration using one pair of images, and apply them to another, even if they are in different spaces/resolutions
-* **full support** for ``FSL FLIRT``, ``MCFLIRT``, ``FNIRT``
-* **intensity correction** via the Jacobian determinant for ``NonLinearRegistration``
+* **separation between transformation and interpolation**: generate a registration using one pair of images, then apply it to another, even if the voxel grids don't match 
+* **full support** for FSL tools ``FLIRT``, ``MCFLIRT``, ``FNIRT``
+* **intensity correction** via the Jacobian determinant for :class:`~regtricks.transforms.nonlinear.NonLinearRegistration`
 * **multi-core support** for 4D images
+* **lazy evaluation** avoids locking up your process until its time to actually transform an image 
 * full **control over interpolation**, including order of spline interpolant and pre-filtering 
-* an ``ImageSpace`` **class for manipulating voxel grids** directly (eg cropping and supersampling)
+* an :class:`~regtricks.image_space.ImageSpace` **class for manipulating voxel grids** directly (eg cropping and supersampling)
 
 ============
 Why?
@@ -55,11 +70,11 @@ Transformations
 
 The subclasses of ``Transformation`` represent all the different types of registration: 
 
-   * ``Registration``: a linear affine registration (4x4 matrix) 
-   * ``MotionCorrection``: a linear motion correction (series of 4x4 matrices) 
-   * ``NonLinearRegistration``: a non-linear registration (aka warp, only FSL FNIRT currently supported) 
+   * :class:`~regtricks.transforms.linear.Registration`: a linear affine registration (4x4 matrix) 
+   * :class:`~regtricks.transforms.linear.MotionCorrection`: a linear motion correction (series of 4x4 matrices) 
+   * :class:`~regtricks.transforms.nonlinear.NonLinearRegistration`: a non-linear registration (aka warp, only FSL FNIRT currently supported) 
 
-All of these objects can be combined together, either via @ multiplication (NB reverse order, eg BC @ AB = AC), or *much* simpler: the ``chain()`` method!
+All of these objects can be combined together, either via @ multiplication (NB reverse order, eg BC @ AB = AC), or *much* simpler: the :func:`~regtricks.multiplication.chain()` method!
 For example, if you want to motion correct a functional image and register it onto a standard space in a single step::
    
    import regtricks as rt
@@ -76,7 +91,7 @@ For example, if you want to motion correct a functional image and register it on
    func_mni = func2mni_mc.apply_to_image('func.nii.gz', ref='mni.nii.gz') 
    nibabel.save(func_mni, 'func_mni.nii.gz')
 
-Regtricks features *type promotion*. For example, if you chain a ``Registration`` and a ``MotionCorrection`` together, the result is a new ``MotionCorrection``. This applies for all transform classes and requires no user action. 
+Regtricks features *type promotion*. For example, if you chain a :class:`~regtricks.transforms.linear.Registration` and a :class:`~regtricks.transforms.linear.MotionCorrection` together, the result is a new :class:`~regtricks.transforms.linear.MotionCorrection`. This applies for all transform classes and requires no user action. 
 All transform classes have an ``inverse()`` method that returns the self-inverse as a new object. 
 
 Image spaces
@@ -88,10 +103,10 @@ All registration operations in regtricks are applied in two stages:
 2. write out the result on some voxel grid 
 
 Although there is only a single way of doing step (1), there are many ways of doing step (2): do you want the result in the space 
-of the input image, in the space of the target image, or in some other space entirely (eg MNI)? This is where the ``ImageSpace`` class comes in.
+of the input image, in the space of the target image, or in some other space entirely (eg MNI)? This is where the :class:`~regtricks.image_space.ImageSpace` class comes in.
 
-The ``ImageSpace`` class is used to represent the voxel grid of an image (ie, field of view, voxel size, position in world space). 
-Although you probably won't need to interact with it directly, its handy to know why it exists. ``ImageSpaces`` are used to denote where image
+The :class:`~regtricks.image_space.ImageSpace` class is used to represent the voxel grid of an image (ie, field of view, voxel size, position in world space). 
+Although you probably won't need to interact with it directly, its handy to know why it exists. :class:`~regtricks.image_space.ImageSpace` are used to denote where image
 data has come *from* and where it is going *to*. Almost all regtricks functions or classes accept a ``src`` and ``ref`` argument which represent the *from* and *to* respectively. 
 
 
@@ -116,32 +131,5 @@ FSL Wrappers
 
 Wrappers for the standard FSL registration functions are available in ``regtricks.wrappers``. These behave slightly differently to normal
 commandline tools in that they return transformation objects. For example: ``a_flirt = rt.wrappers.flirt(src, ref)`` will run FLIRT 
-and output a ``Registration`` object directly. 
+and output a :class:`~regtricks.transforms.linear.Registration` object directly. 
 
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
-
-
-
-.. +-------------------+------------------+---------------------+-----------------------+
-.. | chain(A,B)        | Registration     | MotionCorrection    | NonLinearRegistration |
-.. +-------------------+------------------+---------------------+-----------------------+
-.. | Registration      | Registration     | MotionCorrection    | NonLinearRegistration |
-.. +-------------------+------------------+---------------------+-----------------------+
-.. | MotionCorrection  | MotionCorrection | MotionCorrection    | NonLinear             |
-.. |                   |                  |                     | MotionCorrection      |
-.. +-------------------+------------------+---------------------+-----------------------+
-.. | NonLinear         | NonLinear        | NonLinear           | NonLinearRegistration |
-.. | Registration      | Registration     | MotionCorrection    |                       |
-.. +-------------------+------------------+---------------------+-----------------------+
