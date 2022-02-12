@@ -16,5 +16,4 @@ docs/_build
 build*
 dist*
 *.egg*
-regtricks/_version.py
 *.sh
