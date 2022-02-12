@@ -1,3 +1,4 @@
+from distutils.log import warn
 import tempfile 
 import subprocess
 import os.path as op 
@@ -347,6 +348,23 @@ def det_jacobian(vec_field, vox_size):
     if not len(vox_size) == 3: 
         raise ValueError("vox_size should be a 3-vector of dimensions") 
 
+    # One of the sneakiest bugs I have ever had the misfortune of dealing
+    # with.... If any of the coordinate axes have been flipped (due to FSL
+    # conventions, for example), then the absolute displacement vectors 
+    # will be strictly decreasing in that dimension (ie X, X-1, X-2 etc). 
+    # This means all partial derivatives in that dimension will also be 
+    # negative, which means a negative Jacobian determinant. So, check each
+    # dimension to see if it is ascending / descending, and flip the 
+    # corresponding voxel dimension to compensate if so. 
+    if (np.diff(vec_field[:,0,0,0]) < 0).all(): 
+        vox_size[0] *= -1 
+
+    if (np.diff(vec_field[0,:,0,1]) < 0).all(): 
+        vox_size[1] *= -1
+
+    if (np.diff(vec_field[0,0,:,2]) < 0).all(): 
+        vox_size[2] *= -1 
+
     # Calculate partial derivatives in each direction. Note that each of these
     # returns an array of size (X,Y,Z,3), arranged d/dx, d/dy, d/dz in the last
     # dimension. So dfx is a stack of arrays df(i)/dx, df(i)/dy, df(i)/dz. We
@@ -370,5 +388,8 @@ def det_jacobian(vec_field, vox_size):
     # Reshape into a single stack of (N,3,3) arrays and calculate the det
     # Return an array of scalars sized (XYZ) again 
     jacobian = np.moveaxis(jacobian.reshape(3,3,-1), 2, 0)
-    jdet = np.linalg.det(jacobian)
-    return jdet.reshape(vec_field.shape[:3])
+    jdet = np.linalg.det(jacobian).reshape(vec_field.shape[:3])
+    if ((jdet < 0).sum() / jdet.size) > 0.1: 
+        warnings.warn('regtricks: numerous negative values returned for Jacobian determinant')
+
+    return jdet
