@@ -1,3 +1,4 @@
+from runpy import run_module
 import regtricks as rt 
 import numpy as np 
 import nibabel
@@ -143,6 +144,15 @@ def test_apply_array():
     assert(x == v).all()
 
 
+def test_undersized_input(): 
+    x = np.empty(SPC1.size[:2], dtype=float)
+    try: 
+        rt.Registration.identity().apply_to_array(x, SPC1, SPC1)
+        raise RuntimeError("Should have raised a value error")
+    except ValueError as e: 
+        assert str(e).startswith('Data shape (10, 10) does not match source space [10 10 10]') 
+
+
 def test_mcasl():
     r = rt.MotionCorrection.from_mcflirt('testdata/mcasl.mat', ASLT, ASLT)
     x = r.apply_to_image(ASL, ASLT, order=1)
@@ -219,5 +229,18 @@ def test_mcasl2brain():
 #     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
 
+def scratch(): 
+    calib = 'debug/calib.nii.gz'
+    calib_spc = rt.ImageSpace('debug/calib.nii.gz')
+    t1_spc = rt.ImageSpace('debug/sub-01_struct_space-common.nii.gz')
+    warp = rt.NonLinearRegistration.from_fnirt('debug/calib_topup_dfield_01.nii.gz', calib_spc, calib_spc)
+    calib2struct = rt.Registration.from_flirt('debug/calib2struct.mat', calib_spc, t1_spc)
+
+    spc2 = t1_spc.resize_voxels(calib_spc.vox_size / t1_spc.vox_size)
+    chained = rt.chain(warp, calib2struct)
+    out = chained.apply_to_image(calib, spc2)
+    path = 'debug/debug_out.nii.gz'
+    out.to_filename(path)
+
 if __name__ == "__main__":
-    test_brain2MNI()
+    test_undersized_input()
