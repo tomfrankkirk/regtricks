@@ -108,6 +108,13 @@ class ImageSpace(object):
         return self.size * self.vox_size
 
 
+    @property 
+    def n_vox(self): 
+        """Number of voxels in grid"""
+
+        return self.size.prod() 
+
+
     @property
     def bbox_origin(self): 
         """
