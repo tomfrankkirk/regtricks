@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Kirk
+    given-names: Thomas F.
+    orcid: https://orcid.org/0000-0002-3458-2104
+title: "Regtricks"
+version: 0.3.4
+date-released: 2022-01-05
+url: https://github.com/tomfrankkirk/regtricks
+doi: 10.5281/zenodo.7859541
