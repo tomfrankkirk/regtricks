@@ -179,7 +179,9 @@ class MotionCorrection(Registration):
                                      "should be sized (4xN) x 4.")
                 mats = [ mat[i*4:(i+1)*4,:] for i in range(mat.shape[0] // 4) ]
 
-            
+        if not mats: 
+            raise RuntimeError("No matrices provided")
+        
         self.__transforms = []
         for mat in mats:
             if isinstance(mat, (np.ndarray, str)): 
