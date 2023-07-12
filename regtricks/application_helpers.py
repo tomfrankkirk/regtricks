@@ -1,24 +1,16 @@
 import functools
 import multiprocessing as mp 
-import tempfile 
-import os.path as op 
-import subprocess
-import os 
-import shutil 
-import itertools
+from pathlib import Path 
 
 import nibabel
 from nibabel import Nifti1Image, MGHImage
 from fsl.data.image import Image as FSLImage
-from fsl.wrappers import applywarp
 import numpy as np 
 from scipy.ndimage import map_coordinates
 
-from regtricks.image_space import ImageSpace
-
 
 def src_load_helper(src):
-    if isinstance(src, str):
+    if isinstance(src, (str, Path)):
         src = nibabel.load(src)
         data = src.get_fdata()
     elif isinstance(src, (Nifti1Image, MGHImage)):
@@ -70,7 +62,8 @@ def interpolate_and_scale(idx, data, transform, src_spc, ref_spc, **kwargs):
     # against spline interpolation artefacts in the transformed data 
     superfactor = kwargs.pop('superfactor')
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
-    interp = map_coordinates(data, ijk, **kwargs)
+    interp = map_coordinates(data, ijk, mode='constant', 
+                             prefilter=True, **kwargs)
 
     # If the fill value has been specified, set the min/max
     # range for clipping in light of this 

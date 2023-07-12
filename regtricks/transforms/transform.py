@@ -5,6 +5,7 @@ from multiprocessing import cpu_count
 from nibabel import Nifti1Image, MGHImage
 import numpy as np 
 from fsl.data.image import Image as FSLImage
+from scipy.ndimage import binary_fill_holes
 
 from regtricks.image_space import ImageSpace
 from regtricks import x5_interface as x5 
@@ -103,23 +104,26 @@ class Transform(object):
             raise NotImplementedError("Not Transformation objects")
 
     def apply_to_image(self, src, ref, order=3, superfactor=True, 
-                        cores=cpu_count(), cval=0.0, **kwargs):
+                        mask=True, cval=0.0, cores=cpu_count(), **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
         in the series. 
 
         Args:   
-            src (str/NII/MGZ/FSLImage): image to transform 
-            ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
+            src (Pathlike/NII/MGZ/FSLImage): image to transform 
+            ref (Pathlike/NII/MGZ/FSLImage/ImageSpace): target space for data 
             order (int): 0 for NN, 1 for linear, 2-5 for splines. 
             superfactor (bool/int/iterable): default True for any order > 0,
                 (chosen automatically); intermediate super-sampling (replicates
                 applywarp -super), enabled by default when resampling from 
                 high to low resolution. Set as False to disable, or set an 
                 int/iterable to manually specify level for each image dimension. 
+            mask (bool): for order > 1, mask output to remove negligible 
+                values due to spline artefact 
+            cval (float): fill value for background, used for correcting
+                spline artefact
             cores (int): CPU cores to use for 4D data
-            cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -127,8 +131,9 @@ class Transform(object):
         """
 
         data, creator = apply.src_load_helper(src)
-        resamp = self.apply_to_array(data, src, ref, order, superfactor, 
-                                     cores, cval, **kwargs)
+        resamp = self.apply_to_array(data, src=src, ref=ref, order=order, 
+                                     superfactor=superfactor, mask=mask, 
+                                     cores=cores, cval=cval, **kwargs)
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
         
@@ -143,7 +148,7 @@ class Transform(object):
                 return ret 
 
     def apply_to_array(self, data, src, ref, order=3, superfactor=True,
-                        cores=cpu_count(), cval=0.0, **kwargs):
+                        mask=True, cval=0.0, cores=cpu_count(), **kwargs):
         """
         Applies transformation to data array. If a registration is applied 
         to 4D data, the same transformation will be applied to all volumes 
@@ -151,16 +156,19 @@ class Transform(object):
 
         Args:   
             data (array): 3D or 4D array. 
-            src (str/NII/MGZ/FSLImage/ImageSpace): current space of data 
-            ref (str/NII/MGZ/FSLImage/ImageSpace): target space for data 
+            src (Pathlike/NII/MGZ/FSLImage/ImageSpace): current space of data 
+            ref (Pathlike/NII/MGZ/FSLImage/ImageSpace): target space for data 
             order (int): 0 for NN, 1 for linear, 2-5 for splines. 
             superfactor (bool/int/iterable): default True for any order > 0,
                 (chosen automatically); intermediate super-sampling (replicates
                 applywarp -super), enabled by default when resampling from 
                 high to low resolution. Set as False to disable, or set an 
                 int/iterable to manually specify level for each image dimension. 
+            mask (bool): for order > 1, mask output to remove negligible 
+                values due to spline artefact 
+            cval (float): fill value for background, used for correcting
+                spline artefact
             cores (int): CPU cores to use for 4D data
-            cval (float): fill value for locations outside of the image
             **kwargs: passed on to scipy.ndimage.map_coordinates
 
         Returns: 
@@ -194,7 +202,9 @@ class Transform(object):
             raise ValueError("Superfactor must be integer > 0")
 
         if (superfactor != 1).any(): 
-            ref = ref.resize_voxels(1 / superfactor, 'ceil')
+            super_ref = ref.resize_voxels(1 / superfactor, 'ceil')
+        else: 
+            super_ref = ref 
 
         if not ((data.ndim in (3,4)) and (np.array_equal(src.size, data.shape[:3]))): 
             raise ValueError("Data shape {} does not match source space {}"
@@ -215,6 +225,17 @@ class Transform(object):
             'superfactor': superfactor,
             'order': order
             })
-        resamp = apply.despatch(data, self, src, ref, cores, **kwargs)
+        resamp = apply.despatch(data, self, src, super_ref, cores, **kwargs)
+
+        if mask and (order > 1): 
+            mvol = (data != cval) 
+            while mvol.ndim < 4: 
+                mvol = mvol[...,None]
+            mvol = np.stack([ binary_fill_holes(mvol[...,idx]) for idx in range(mvol.shape[3]) ], axis=-1) 
+            if mvol.ndim > data.ndim: 
+                mvol = np.squeeze(mvol)
+            mres = self.apply_to_array(mvol, src, ref, order=1, mask=False)
+            mres = (np.squeeze(mres) > 0.5)
+            resamp[~mres] = cval 
 
         return resamp      

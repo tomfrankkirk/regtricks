@@ -7,6 +7,7 @@ into the space of an image)
 
 import copy 
 from textwrap import dedent
+from pathlib import Path
 
 import nibabel
 import numpy as np 
@@ -19,7 +20,7 @@ class ImageSpace(object):
     Voxel grid of an image, ignoring actual image data. 
 
     Args: 
-        img: path to image, nibabel Nifti/MGH or FSL Image object
+        img: Pathlike to image, nibabel Nifti/MGH or FSL Image object
     
     Attributes: 
         size: array of voxel counts in each dimension 
@@ -30,7 +31,7 @@ class ImageSpace(object):
 
     def __init__(self, img):
 
-        if isinstance(img, str):
+        if isinstance(img, (str, Path)):
             fname = img 
             img = nibabel.load(img)
         else: 
@@ -291,8 +292,12 @@ class ImageSpace(object):
     def save_image(self, data, path):
         """Save 3D or 4D data array at path using this image's voxel grid"""
 
+        if not isinstance(path, str): 
+            path = str(path)
+
         if not (path.endswith('.nii') or path.endswith('.nii.gz')):
             path += '.nii.gz'
+            
         nii = self.make_nifti(data)
         nibabel.save(nii, path)
 

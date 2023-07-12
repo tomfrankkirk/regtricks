@@ -1,8 +1,8 @@
-from distutils.log import warn
 import tempfile 
 import subprocess
 import os.path as op 
 import warnings 
+from pathlib import Path
 
 import nibabel 
 import numpy as np 
@@ -17,15 +17,15 @@ class FNIRTCoefficients(object):
 
     Args: 
         coeffs; nibabel object or path to coefficients file
-        src: str or ImageSpace, path to original source for transform
-        ref: str or ImageSpace, path to original reference for transform
+        src: Pathlike or ImageSpace, path to original source for transform
+        ref: Pathlike or ImageSpace, path to original reference for transform
         constrain_jac (bool/tuple): constrain the Jacobian of the transform
             (default False). If True, default limits of (0.01, 100) are used, 
             otherwise the limits (min,max) can be passed directly. 
     """
 
     def __init__(self, coeffs, src, ref, constrain_jac=False):
-        if isinstance(coeffs, str):
+        if isinstance(coeffs, (str, Path)):
             coeffs = nibabel.load(coeffs)
         else: 
             assert isinstance(coeffs, nibabel.Nifti1Image)

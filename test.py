@@ -169,7 +169,7 @@ def test_asl2brain():
 
 def test_brain2asl():
     r = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
-    x = r.inverse().apply_to_image(BRAIN, ASLT)
+    x = r.inverse().apply_to_image(BRAIN, ASLT, order=1, mask=False)
     t = nibabel.load(TD + 'brain2asl_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
@@ -202,7 +202,7 @@ def test_aslmc2MNI():
     r1 = rt.Registration.from_flirt(TD + 'asl2brain.mat', ASLT, BRAIN)
     r2 = rt.NonLinearRegistration.from_fnirt(TD + 'brain2MNI_coeffs.nii.gz', BRAIN, MNI)
     chained = rt.chain(mc, r1, r2)
-    x = chained.apply_to_image(ASL, MNI)
+    x = chained.apply_to_image(ASL, MNI, order=1)
     t = nibabel.load(TD + 'aslmc2MNI_truth.nii.gz').dataobj
     assert (t - x.dataobj < 0.01 * np.max(t)).all() 
 
@@ -243,4 +243,4 @@ def scratch():
     out.to_filename(path)
 
 if __name__ == "__main__":
-    test_undersized_input()
+    test_brain2asl()

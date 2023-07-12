@@ -2,16 +2,12 @@ import os.path as op
 from textwrap import dedent
 import glob 
 import os 
+from pathlib import Path 
 
-import nibabel
-from nibabel import Nifti1Image, MGHImage
 import numpy as np 
-from fsl.data.image import Image as FSLImage
 
 from regtricks.image_space import ImageSpace
-from regtricks import x5_interface as x5 
 from regtricks import application_helpers as apply
-from regtricks import multiplication as multiply
 from regtricks.transforms.transform import Transform
 
 class Registration(Transform):
@@ -19,13 +15,13 @@ class Registration(Transform):
     Affine (4x4) transformation between two images.
 
     Args: 
-        src2ref (str/np.ndarray): path to text-like file to load or np.ndarray
+        src2ref (Pathlike, np.ndarray): path to text-like file to load or np.ndarray
     """
 
     def __init__(self, src2ref):
         Transform.__init__(self)
 
-        if isinstance(src2ref, str): 
+        if isinstance(src2ref, (str, Path)): 
             src2ref = np.loadtxt(src2ref)
 
         if (src2ref.shape != (4,4) 
@@ -42,7 +38,7 @@ class Registration(Transform):
         FLIRT's -omat output. 
 
         Args: 
-            src2ref (str/np.ndarray): path to text-like file to load or np.ndarray
+            src2ref (Pathlike, np.ndarray): path to text-like file to load or np.ndarray
             src: the source of the transform 
             ref: the reference (or target) of the transform 
 
@@ -50,7 +46,7 @@ class Registration(Transform):
             Registration object
         """
 
-        if isinstance(src2ref, str): 
+        if isinstance(src2ref, (str, Path)): 
             src2ref = np.loadtxt(src2ref)
 
         if not isinstance(src, ImageSpace):
@@ -167,6 +163,9 @@ class MotionCorrection(Registration):
     def __init__(self, mats):
         Transform.__init__(self)
 
+        if isinstance(mats, Path): 
+            mats = str(mats)
+
         if isinstance(mats, str):
             if op.isdir(mats): 
                 mats = sorted(glob.glob(op.join(mats, '*')))
@@ -184,7 +183,7 @@ class MotionCorrection(Registration):
         
         self.__transforms = []
         for mat in mats:
-            if isinstance(mat, (np.ndarray, str)): 
+            if isinstance(mat, (np.ndarray, str, Path)): 
                 m = Registration(mat)
             else: 
                 m = mat 
@@ -210,6 +209,9 @@ class MotionCorrection(Registration):
         Returns: 
             MotionCorrection 
         """
+
+        if isinstance(mats, Path): 
+            mats = str(mats)
 
         if isinstance(mats, str):
             mats = sorted(glob.glob(op.join(mats, '*')))

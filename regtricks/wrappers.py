@@ -1,13 +1,12 @@
 import tempfile
 import os.path as op 
 import shutil
+from pathlib import Path
 
-import numpy as np
 import nibabel
 from fsl.wrappers.flirt import flirt as flirt_cmd
 from fsl.wrappers.flirt import mcflirt as mcflirt_cmd
 from fsl.wrappers.fnirt import fnirt as fnirt_cmd 
-from fsl.data.image import Image as FSLImage
 
 from regtricks.transforms import Registration, MotionCorrection, NonLinearRegistration
 
@@ -47,7 +46,7 @@ def mcflirt(src, refvol=-1, **kwargs):
     for full docs. 
 
     Args: 
-        src: image to register
+        src: (Pathlike) image to register
         refvol: target frame to register on to, default is N/2
         out: where to save output
         **kwargs: as for MCFLIRT
@@ -56,7 +55,7 @@ def mcflirt(src, refvol=-1, **kwargs):
         MotionCorrection object
     """
 
-    if isinstance(src, str):
+    if isinstance(src, (str, Path)):
         src_path = src 
         src = nibabel.load(src)
 

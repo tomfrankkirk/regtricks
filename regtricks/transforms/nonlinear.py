@@ -20,17 +20,6 @@ class NonLinearRegistration(Transform):
     are supported. Note that the --premat and --postmat used by FSL command
     line tools should not be supplied here. Instead, defined them as 
     Registration objects and use chain() to concatenate them with NLRs. 
-
-    
-    Args: 
-        warp (path): FNIRT coefficient field 
-        src (path/ImageSpace): source image used for generating FNIRT coefficients
-        ref (path/ImageSpace): reference image used for generating FNIRT coefficients 
-        intensity_correct: intensity correct output via the Jacobian determinant
-            of this warp (when self.apply_to*() is called)
-        constrain_jac (bool/array-like): constrain Jacobian for intensity
-            correction (default False). If True, limits of (0.01, 100) will 
-            be used, or explicit limits can be given as (min, max)
     """
 
     def __init__():
@@ -52,15 +41,15 @@ class NonLinearRegistration(Transform):
         combined = chain(pre, non-linear, post)
 
         Args: 
-            coefficients (str/nibabel NIFTI): FNIRT coefficients 
-            src (str/ImageSpace): the source of the warp 
-            ref (str/ImageSpace): the reference of the warp 
-            intensity_correct (bool): whether to apply intensity correction via
-                the determinant of the warp's Jacobian (default false)
+            coefficients (Pathlike): FNIRT coefficient field 
+            src (Pathlike, ImageSpace): source image used for generating FNIRT coefficients
+            ref (Pathlike, ImageSpace): reference image used for generating FNIRT coefficients 
+            intensity_correct: intensity correct output via the Jacobian determinant
+                of this warp (when self.apply_to*() is called)
             constrain_jac (bool/array-like): constrain Jacobian for intensity
                 correction (default False). If True, limits of (0.01, 100) will 
                 be used, or explicit limits can be given as (min, max)
-
+                
         Returns: 
             NonLinearRegistration object 
         """
