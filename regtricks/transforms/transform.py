@@ -211,7 +211,7 @@ class Transform(object):
                                 .format(data.shape, src.size))
 
         # Force to float data 
-        data = data.astype(float32)
+        data = data.astype(np.float32)
 
         # Only use multiprocessing on 4D data 
         if data.ndim == 3: 
