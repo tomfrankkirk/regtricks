@@ -187,7 +187,7 @@ class Transform(object):
         if superfactor is not (False): 
             if superfactor is True: 
                 if (src.vox_size < ref.vox_size).any() and (order != 0): 
-                    superfactor = np.ceil(ref.vox_size / src.vox_size)
+                    superfactor = np.floor(ref.vox_size / src.vox_size)
                 else: 
                     superfactor = 1 
 
@@ -211,8 +211,7 @@ class Transform(object):
                                 .format(data.shape, src.size))
 
         # Force to float data 
-        if data.dtype.kind != 'f': 
-            data = data.astype(float)
+        data = data.astype(float32)
 
         # Only use multiprocessing on 4D data 
         if data.ndim == 3: 
