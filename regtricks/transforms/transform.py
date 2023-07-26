@@ -175,6 +175,9 @@ class Transform(object):
             (np.array) transformed image data in ref voxel grid.
         """
 
+        from regtricks.transforms import (NonLinearRegistration, 
+                                          NonLinearMotionCorrection)
+
         if not isinstance(src, ImageSpace):
             src = ImageSpace(src)
         if not isinstance(ref, ImageSpace):
@@ -188,6 +191,7 @@ class Transform(object):
             if superfactor is True: 
                 if (src.vox_size < ref.vox_size).any() and (order != 0): 
                     superfactor = np.floor(ref.vox_size / src.vox_size)
+                    superfactor = np.maximum(superfactor, 1)
                 else: 
                     superfactor = 1 
 
@@ -230,11 +234,25 @@ class Transform(object):
             mvol = (data != cval) 
             while mvol.ndim < 4: 
                 mvol = mvol[...,None]
-            mvol = np.stack([ binary_fill_holes(mvol[...,idx]) for idx in range(mvol.shape[3]) ], axis=-1) 
+            mvol = np.stack([ binary_fill_holes(mvol[...,idx]) 
+                             for idx in range(mvol.shape[3]) ], axis=-1) 
             if mvol.ndim > data.ndim: 
                 mvol = np.squeeze(mvol)
-            mres = self.apply_to_array(mvol, src, ref, order=1, mask=False)
-            mres = (np.squeeze(mres) > 0.5)
-            resamp[~mres] = cval 
+
+            if isinstance(self, NonLinearMotionCorrection): 
+                t = NonLinearMotionCorrection(self.warp, self.premat, self.postmat, intensity_correct=0)
+            elif isinstance(self, NonLinearRegistration): 
+                t = NonLinearRegistration._manual_construct(self.warp, self.premat, self.postmat, intensity_correct=0)
+            else: 
+                t = self 
+
+            mres = t.apply_to_array(mvol, src, ref, order=1, mask=False)
+            mres = mres.astype(bool)
+            while mres.ndim < 4: 
+                mres = mres[...,None]
+            mres = np.stack([ binary_fill_holes(mres[...,idx]) 
+                             for idx in range(mres.shape[3]) ], axis=-1) 
+            mres = np.squeeze(mres)
+            resamp[~mres] = cval
 
         return resamp      
