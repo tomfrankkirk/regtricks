@@ -5,14 +5,14 @@ spaces and also for saving images into said space (eg, save PV estimates
 into the space of an image)
 """
 
-import copy 
-from textwrap import dedent
+import copy
 from pathlib import Path
+from textwrap import dedent
 
 import nibabel
-import numpy as np 
-from nibabel import Nifti1Image, MGHImage
+import numpy as np
 from fsl.data.image import Image as FSLImage
+from nibabel import MGHImage, Nifti1Image
 
 
 class ImageSpace(object):
@@ -221,6 +221,9 @@ class ImageSpace(object):
             factor = factor * np.ones(3)
 
         new_size = rounder(self.size / factor).astype(int)
+        if (new_size == 0).any(): 
+            raise RuntimeError("ImageSpace with resized voxels has no size")
+
         new_vox2world = copy.deepcopy(self.vox2world)
         new_vox2world[:3,:3] *= factor[None,:]
         bbox_shift = (new_vox2world[:3,:3] @ [0.5, 0.5, 0.5])
