@@ -118,7 +118,7 @@ class Transform(object):
         mask=True,
         cval=0.0,
         cores=cpu_count(),
-        **kwargs
+        **kwargs,
     ):
         """
         Applies transformation to data array. If a registration is applied
@@ -155,7 +155,7 @@ class Transform(object):
             mask=mask,
             cores=cores,
             cval=cval,
-            **kwargs
+            **kwargs,
         )
         if not isinstance(ref, ImageSpace):
             ref = ImageSpace(ref)
@@ -180,7 +180,7 @@ class Transform(object):
         mask=True,
         cval=0.0,
         cores=cpu_count(),
-        **kwargs
+        **kwargs,
     ):
         """
         Applies transformation to data array. If a registration is applied
@@ -222,25 +222,26 @@ class Transform(object):
         # Automatic is to use the ratio of input / output voxel size,
         # but for NN we leave it at 1 unless the user has expressly
         # set a factor.
-        if superfactor is not (False):
-            if superfactor is True:
-                if (src.vox_size < ref.vox_size).any() and (order != 0):
-                    superfactor = np.floor(ref.vox_size / src.vox_size)
-                    superfactor = np.maximum(superfactor, 1)
-                else:
-                    superfactor = 1
+        sfactor = np.ones(3)
+        if superfactor is not False:
+            if (superfactor is True) and (order > 0):
+                superfactor = np.floor(ref.vox_size / src.vox_size)
+                sfactor *= np.maximum(superfactor, 1)
+            else:
+                try:
+                    superfactor = np.asanyarray(superfactor)
+                    sfactor *= superfactor
+                except:
+                    raise ValueError(
+                        f"Unrecognised value for superfactor: {superfactor}"
+                    )
 
-            # Manually specified
-            # Force superfactor into an integer array of length 3
-            superfactor = np.array(superfactor).round() * np.ones(3)
-        else:
-            superfactor = np.ones(3)
-        superfactor = superfactor.astype(int)
+        sfactor = sfactor.astype(int)
 
-        if (superfactor < 1).any():
+        if (sfactor < 1).any():
             raise ValueError("Superfactor must be integer > 0")
 
-        if (superfactor != 1).any():
+        if (sfactor > 1).any():
             super_ref = ref.resize_voxels(1 / superfactor, "ceil")
         else:
             super_ref = ref
@@ -261,7 +262,7 @@ class Transform(object):
         else:
             cores = min([cores, data.shape[-1]])
 
-        kwargs.update({"cval": cval, "superfactor": superfactor, "order": order})
+        kwargs.update({"cval": cval, "superfactor": sfactor, "order": order})
         resamp = apply.despatch(data, self, src, super_ref, cores, **kwargs)
 
         if mask and (order > 1):
