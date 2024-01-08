@@ -1,7 +1,3 @@
-import os.path as op
-from multiprocessing import cpu_count
-from textwrap import dedent
-
 import numpy as np
 from fsl.data.image import Image as FSLImage
 from nibabel import MGHImage, Nifti1Image
@@ -117,7 +113,7 @@ class Transform(object):
         superfactor=True,
         mask=True,
         cval=0.0,
-        cores=cpu_count(),
+        cores=1,
         **kwargs,
     ):
         """
@@ -179,7 +175,7 @@ class Transform(object):
         superfactor=True,
         mask=True,
         cval=0.0,
-        cores=cpu_count(),
+        cores=1,
         **kwargs,
     ):
         """
