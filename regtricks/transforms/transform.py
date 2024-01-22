@@ -238,7 +238,7 @@ class Transform(object):
             raise ValueError("Superfactor must be integer > 0")
 
         if (sfactor > 1).any():
-            super_ref = ref.resize_voxels(1 / superfactor, "ceil")
+            super_ref = ref.resize_voxels(1 / sfactor, "ceil")
         else:
             super_ref = ref
 
