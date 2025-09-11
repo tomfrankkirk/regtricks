@@ -62,7 +62,7 @@ def interpolate_and_scale(
     """
 
     ijk, scale = transform.resolve(src_spc, ref_spc, idx)
-    interp = map_coordinates(data, ijk, mode="constant", prefilter=True, **kwargs)
+    interp = map_coordinates(data, ijk, mode="grid-constant", prefilter=True, **kwargs)
 
     # If the fill value has been specified, set the min/max
     # range for clipping in light of this
